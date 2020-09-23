@@ -25,6 +25,11 @@
             <name>Maven Central</name>
             <url>https://repo1.maven.org/maven2/</url>
         </repository>
+        <repository>
+            <id>mvnrepo</id>
+            <name>Maven Repo</name>
+            <url>https://mvnrepository.com/artifact/net.openhft/collections</url>
+        </repository>
     </repositories>
 
     <modules>

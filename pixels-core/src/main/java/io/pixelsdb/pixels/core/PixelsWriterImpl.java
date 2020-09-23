@@ -27,19 +27,10 @@ import io.pixelsdb.pixels.core.PixelsProto.RowGroupInformation;
 import io.pixelsdb.pixels.core.PixelsProto.RowGroupStatistic;
 import io.pixelsdb.pixels.core.exception.PixelsWriterException;
 import io.pixelsdb.pixels.core.stats.StatsRecorder;
+import io.pixelsdb.pixels.core.trans.DeleteMapStore;
 import io.pixelsdb.pixels.core.vector.ColumnVector;
 import io.pixelsdb.pixels.core.vector.VectorizedRowBatch;
-import io.pixelsdb.pixels.core.writer.BinaryColumnWriter;
-import io.pixelsdb.pixels.core.writer.BooleanColumnWriter;
-import io.pixelsdb.pixels.core.writer.ByteColumnWriter;
-import io.pixelsdb.pixels.core.writer.CharColumnWriter;
-import io.pixelsdb.pixels.core.writer.ColumnWriter;
-import io.pixelsdb.pixels.core.writer.DoubleColumnWriter;
-import io.pixelsdb.pixels.core.writer.FloatColumnWriter;
-import io.pixelsdb.pixels.core.writer.IntegerColumnWriter;
-import io.pixelsdb.pixels.core.writer.StringColumnWriter;
-import io.pixelsdb.pixels.core.writer.TimestampColumnWriter;
-import io.pixelsdb.pixels.core.writer.VarcharColumnWriter;
+import io.pixelsdb.pixels.core.writer.*;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.logging.log4j.LogManager;
@@ -352,6 +343,8 @@ public class PixelsWriterImpl
             {
                 cw.close();
             }
+            DeleteMapStore.Instance().createDeleteMapForFile(
+                    this.physicalWriter.getPath(), this.fileRowNum);
         }
         catch (IOException e)
         {

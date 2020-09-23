@@ -114,9 +114,9 @@ public class PhysicalFSWriter
         return fs;
     }
 
-    public Path getPath()
+    public String getPath()
     {
-        return path;
+        return path.getName();
     }
 
     public long getBlockSize()
