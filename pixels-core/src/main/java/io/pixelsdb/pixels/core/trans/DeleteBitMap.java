@@ -3,7 +3,7 @@ package io.pixelsdb.pixels.core.trans;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 
 /**
- * Created at: 17.09.20
+ * Created at: 17.09.20, for Issue #82.
  * Author: bian
  */
 public class DeleteBitMap

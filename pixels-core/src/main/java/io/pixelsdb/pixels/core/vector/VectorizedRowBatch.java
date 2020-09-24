@@ -79,11 +79,16 @@ public class VectorizedRowBatch implements AutoCloseable
     public VectorizedRowBatch(int numCols, int size)
     {
         this.numCols = numCols;
-        this.size = size;
+        this.size = 0;
         this.maxSize = size;
         selected = new int[size];
         selectedInUse = false;
-        this.cols = new ColumnVector[numCols];
+        /**
+         * Issue #82:
+         * We have an extra column at the end for the hidden version (timestamp).
+         */
+        // TODO (Issue #82): currently, we do not ensure that the version column is filled if the client does not use putRow().
+        this.cols = new ColumnVector[numCols+1];
         projectedColumns = new int[numCols];
 
         // Initially all columns are projected and in the same order
@@ -95,6 +100,38 @@ public class VectorizedRowBatch implements AutoCloseable
 
         dataColumnCount = -1;
         partitionColumnCount = -1;
+    }
+
+    /**
+     * Write a new tuple into this row batch.
+     * @param timestamp the commit timestamp of the tuple.
+     * @param columnValues the column values in the origin order.
+     * @param orderMap map origin column order to the column order in this row batch.
+     * @return true if success, false if the row batch is full.
+     */
+    public boolean putRow (long timestamp, String[] columnValues, int[] orderMap)
+    {
+        /**
+         * This method is added in Issue #82.
+         */
+        if (this.size >= this.maxSize)
+        {
+            return false;
+        }
+        for (int i = 0; i < columnValues.length; i++)
+        {
+            int valueIdx = orderMap[i];
+            if (columnValues[valueIdx].equalsIgnoreCase("\\N"))
+            {
+                this.cols[i].isNull[this.size] = true;
+            } else
+            {
+                this.cols[i].add(columnValues[valueIdx]);
+            }
+        }
+        this.cols[this.numCols].add(timestamp);
+        this.size++;
+        return true;
     }
 
     public void setPartitionInfo(int dataColumnCount, int partitionColumnCount)

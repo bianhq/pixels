@@ -107,13 +107,24 @@ public class PixelsWriterImpl
 
         List<TypeDescription> children = schema.getChildren();
         checkArgument(!requireNonNull(children, "schema is null").isEmpty(), "schema is empty");
-        this.columnWriters = new ColumnWriter[children.size()];
+        /**
+         * Issue #82:
+         * We add a hidden column for data version (timestamp) at the end of the user columns.
+         */
+        this.columnWriters = new ColumnWriter[children.size()+1];
         fileColStatRecorders = new StatsRecorder[children.size()];
         for (int i = 0; i < children.size(); ++i)
         {
             columnWriters[i] = createColumnWriter(children.get(i), encoding);
             fileColStatRecorders[i] = StatsRecorder.create(children.get(i));
         }
+        /**
+         * Issue #82:
+         * We use long for the hidden version column, without encoding.
+         */
+        // TODO (Issue #82): use delta encoding in the future if delta encoder is implemented.
+        TypeDescription versionColumnType = TypeDescription.createLong();
+        columnWriters[children.size()] = createColumnWriter(versionColumnType, false);
 
         this.rowGroupInfoList = new LinkedList<>();
         this.rowGroupStatisticList = new LinkedList<>();
@@ -343,6 +354,10 @@ public class PixelsWriterImpl
             {
                 cw.close();
             }
+            /**
+             * Issue #82:
+             * Automatically create delete maps for the new written file.
+             */
             DeleteMapStore.Instance().createDeleteMapForFile(
                     this.physicalWriter.getPath(), this.fileRowNum);
         }

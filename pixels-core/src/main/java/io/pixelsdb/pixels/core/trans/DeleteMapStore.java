@@ -4,7 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Created at: 17.09.20
+ * Created at: 17.09.20, for Issue #82.
  * Author: bian
  */
 public class DeleteMapStore

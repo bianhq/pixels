@@ -145,6 +145,7 @@ public class PixelsRecordReaderImpl
         // if size of cols is 0, create an empty row batch
         if (optionIncludedCols.length == 0)
         {
+            // TODO (Issue #82): read the version column if optionIncludedCols is empty.
             TypeDescription resultSchema = TypeDescription.createSchema(new ArrayList<>());
             this.resultRowBatch = resultSchema.createRowBatch(0);
             resultRowBatch.selectedInUse = false;
@@ -154,7 +155,7 @@ public class PixelsRecordReaderImpl
             return;
         }
         List<Integer> optionColsIndices = new ArrayList<>();
-        this.includedColumns = new boolean[fileColTypes.size()];
+        this.includedColumns = new boolean[fileColTypes.size()+1]; // Issue #82: with version column at the end.
         for (String col : optionIncludedCols)
         {
             for (int j = 0; j < fileColTypes.size(); j++)
@@ -168,6 +169,13 @@ public class PixelsRecordReaderImpl
                 }
             }
         }
+        /**
+         * Issue #82:
+         * Include the hidden version column, which is the last column in each row group,
+         * but not included in the fileColTypes that comes from the schema in the file footer.
+         */
+        optionColsIndices.add(fileColTypes.size());
+        this.includedColumns[fileColTypes.size()] = true;
 
         // check included columns
         if (includedColumnsNum != optionIncludedCols.length && !option.isTolerantSchemaEvolution())
@@ -177,7 +185,7 @@ public class PixelsRecordReaderImpl
         }
 
         // create result columns storing result column ids by user specified order
-        this.resultColumns = new int[includedColumnsNum];
+        this.resultColumns = new int[includedColumnsNum+1]; // Issue #82: with version column at the end.
         for (int i = 0; i < optionColsIndices.size(); i++)
         {
             this.resultColumns[i] = optionColsIndices.get(i);
@@ -198,6 +206,11 @@ public class PixelsRecordReaderImpl
 
         // create column readers
         List<TypeDescription> columnSchemas = fileSchema.getChildren();
+        /**
+         * Issue #82:
+         * Add the type description of hidden column into columnSchemas.
+         */
+        columnSchemas.add(TypeDescription.createLong());
         readers = new ColumnReader[resultColumns.length];
         for (int i = 0; i < resultColumns.length; i++)
         {
@@ -207,8 +220,15 @@ public class PixelsRecordReaderImpl
 
         // create result vectorized row batch
         List<PixelsProto.Type> resultTypes = new ArrayList<>();
-        for (int resultColumn : resultColumns)
+        /**
+         * Issue #82:
+         * Do not use the last item in resultColumns, because it is not in fileColTypes.
+         * We also do not need to add the hidden version column into resultSchema,
+         * because a hidden column will be created automatically in the row batch.
+         */
+        for (int i = 0; i < resultColumns.length-1; ++i)
         {
+            int resultColumn = resultColumns[i];
             resultTypes.add(fileColTypes.get(resultColumn));
         }
         TypeDescription resultSchema = TypeDescription.createSchema(resultTypes);
@@ -419,6 +439,7 @@ public class PixelsRecordReaderImpl
                 short rgId = chunkId.rowGroupId;
                 short colId = chunkId.columnId;
 //                long getBegin = System.nanoTime();
+                // TODO (Issue #82): always cache the hidden version column.
                 ByteBuffer columnlet = cacheReader.get(blockId, rgId, colId, chunkId.direct);
 //                long getEnd = System.nanoTime();
 //                logger.debug("[cache get]: " + columnlet.length + "," + (getEnd - getBegin));
@@ -689,8 +710,7 @@ public class PixelsRecordReaderImpl
                             .getColumnChunkEncodings(resultColumns[i]);
                     int index = curRGIdx * includedColumns.length + resultColumns[i];
                     PixelsProto.ColumnChunkIndex chunkIndex = rowGroupFooter.getRowGroupIndexEntry()
-                            .getColumnChunkIndexEntries(
-                                    resultColumns[i]);
+                            .getColumnChunkIndexEntries(resultColumns[i]);
                     // TODO: read chunk buffer lazily when a column block is read by PixelsPageSource.
                     readers[i].read(chunkBuffers[index], encoding, curRowInRG, curBatchSize,
                             postScript.getPixelStride(), resultRowBatch.size, columnVectors[i], chunkIndex);

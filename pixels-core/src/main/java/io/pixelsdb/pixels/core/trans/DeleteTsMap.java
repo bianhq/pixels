@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Created at: 20.09.20
+ * Created at: 20.09.20, for Issue #82.
  * Author: bian
  */
 public class DeleteTsMap
