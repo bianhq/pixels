@@ -1,8 +1,5 @@
 package io.pixelsdb.pixels.core.trans;
 
-import net.openhft.collections.HugeConfig;
-import net.openhft.collections.HugeHashMap;
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
@@ -18,13 +15,6 @@ public class DeleteTsMap
 
     public DeleteTsMap()
     {
-        HugeConfig config = HugeConfig.DEFAULT.clone()
-                .setSegments(128)
-                .setSmallEntrySize(128)
-                .setCapacity(128);
-
-        final HugeHashMap<Integer, Long> map =
-                new HugeHashMap<Integer, Long>(config, Integer.class, Long.class);
         rowIdToTimestampMap = new HashMap<>();
         lock = new ReentrantLock();
     }

@@ -1,6 +1,7 @@
 package io.pixelsdb.pixels.core.trans;
 
-import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicLongArray;
 
 /**
  * Created at: 17.09.20, for Issue #82.
@@ -8,12 +9,12 @@ import java.util.concurrent.atomic.AtomicIntegerArray;
  */
 public class DeleteBitMap
 {
-    private final AtomicIntegerArray backedArray;
+    private final AtomicLongArray backedArray;
 
     public DeleteBitMap(int numEntry)
     {
         int numElements = (numEntry * 2 + 31) / 32;
-        backedArray = new AtomicIntegerArray(numElements);
+        backedArray = new AtomicLongArray(numElements);
     }
 
     public enum EntryStatus
@@ -26,53 +27,57 @@ public class DeleteBitMap
 
     public boolean setIntent (int entryIndex)
     {
-        int n = entryIndex >> 4;
-        int i = (entryIndex % 16) * 2;
-        int originValue = this.backedArray.get(n);
-        if ((originValue & (0x03 << i)) > 0)
+        int n = entryIndex >> 5;
+        int i = (entryIndex % 32) * 2;
+        long originValue = this.backedArray.get(n);
+        if (((originValue >>> i) & 0x03L) > 0)
         {
+            // if the bits for entryIndex is already set.
             return false;
         }
-        int newValue = originValue | (0x02 << i);
+        // start from the lowest bits.
+        long newValue = originValue | (0x02L << i);
         while (this.backedArray.compareAndSet(n, originValue, newValue) == false)
         {
             originValue = this.backedArray.get(n);
-            if ((originValue & (0x03 << i)) > 0)
+            if (((originValue >>> i) & 0x03L) > 0)
             {
                 return false;
             }
-            newValue = originValue | (0x02 << i);
+            newValue = originValue | (0x02L << i);
         }
         return true;
     }
 
     public boolean setDeleted (int entryIndex)
     {
-        int n = entryIndex >> 4;
-        int i = (entryIndex % 16) * 2;
-        int originValue = this.backedArray.get(n);
-        if ((originValue & (0x02 << i)) == 0)
+        int n = entryIndex >> 5;
+        int i = (entryIndex % 32) * 2;
+        long originValue = this.backedArray.get(n);
+        if (((originValue >>> i) & 0x02L) == 0)
         {
+            // if the bits for entryIndex is already set.
             return false;
         }
-        int newValue = originValue | (0x03 << i);
+        // start from the lowest bits.
+        long newValue = originValue | (0x03L << i);
         while (this.backedArray.compareAndSet(n, originValue, newValue) == false)
         {
             originValue = this.backedArray.get(n);
-            if ((originValue & (0x02 << i)) == 0)
+            if (((originValue >>> i) & 0x02L) == 0)
             {
                 return false;
             }
-            newValue = originValue | (0x03 << i);
+            newValue = originValue | (0x03L << i);
         }
         return true;
     }
 
     public EntryStatus getStatus (int entryIndex)
     {
-        int n = entryIndex >> 4;
-        int i = (entryIndex % 16) * 2;
-        switch (this.backedArray.get(n) >> i)
+        int n = entryIndex >> 5;
+        int i = (entryIndex % 32) * 2;
+        switch ((int)(this.backedArray.get(n) >>> i) & 0x03)
         {
             case 0x00:
                 return EntryStatus.EXISTING;
@@ -82,7 +87,28 @@ public class DeleteBitMap
                 return EntryStatus.DELETED;
             default:
                 return EntryStatus.ERROR;
+        }
+    }
 
+    public void getBatchRowIds (Set<Integer> deletedRowIds, Set<Integer> intentRowIds)
+    {
+        assert deletedRowIds != null && intentRowIds != null;
+
+        for (int i = 0; i < this.backedArray.length(); ++i)
+        {
+            long v = this.backedArray.get(i);
+            for (int j = 0; j < 64; j+=2)
+            {
+                switch ((int)(v >>> j) & 0x03)
+                {
+                    case 0x02:
+                        intentRowIds.add(i*32+j/2);
+                        break;
+                    case 0x03:
+                        deletedRowIds.add(i*32+j/2);
+                        break;
+                }
+            }
         }
     }
 }
