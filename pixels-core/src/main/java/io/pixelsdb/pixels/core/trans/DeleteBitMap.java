@@ -10,9 +10,11 @@ import java.util.concurrent.atomic.AtomicLongArray;
 public class DeleteBitMap
 {
     private final AtomicLongArray backedArray;
+    private final int rowNum;
 
     public DeleteBitMap(int numEntry)
     {
+        rowNum = numEntry;
         int numElements = (numEntry * 2 + 31) / 32;
         backedArray = new AtomicLongArray(numElements);
     }
@@ -71,6 +73,11 @@ public class DeleteBitMap
             newValue = originValue | (0x03L << i);
         }
         return true;
+    }
+
+    public int getRowNum ()
+    {
+        return this.rowNum;
     }
 
     public EntryStatus getStatus (int entryIndex)

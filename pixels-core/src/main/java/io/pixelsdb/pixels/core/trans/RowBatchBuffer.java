@@ -36,9 +36,10 @@ public class RowBatchBuffer
         {
             long timestamp = versionColumn.vector[i];
             // TODO: find the target file and update its delete maps.
-            String targetFilePath = "";
-            int targetRowId = 0;
-            boolean find = false;
+            RowIdentifier rowIdentifier = DeleteMapStore.Instance().generateRandomRowIdentifier();
+            String targetFilePath = rowIdentifier.getFilePath();
+            int targetRowId = rowIdentifier.getRowIdInFile();
+            boolean find = rowIdentifier.isExistsInFile();
             if (find)
             {
                 DeleteMapStore.Instance().getDeleteBitMap(targetFilePath)

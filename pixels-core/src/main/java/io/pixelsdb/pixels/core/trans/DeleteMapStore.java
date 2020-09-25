@@ -71,4 +71,21 @@ public class DeleteMapStore
         this.lock.unlock();
         return invisibleRowIds;
     }
+
+    /**
+     * This method is only used for test purpose before index update is implemented.
+     * @return
+     */
+    public RowIdentifier generateRandomRowIdentifier ()
+    {
+        int numFiles = this.bitMaps.keySet().size();
+        Random random = new Random(System.nanoTime());
+        int fileId = random.nextInt(numFiles);
+        List<String> filePaths = new ArrayList<>(this.bitMaps.keySet());
+        String path = filePaths.get(fileId);
+        int rowNum = this.bitMaps.get(path).getRowNum();
+        int rowId = random.nextInt(rowNum);
+        double existsRate = random.nextDouble();
+        return new RowIdentifier(path, rowId, existsRate < 0.05);
+    }
 }
