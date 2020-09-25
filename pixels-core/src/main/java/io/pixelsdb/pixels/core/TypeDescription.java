@@ -725,7 +725,11 @@ public final class TypeDescription
         {
             result = new VectorizedRowBatch(children.size(), maxSize);
             List<String> columnNames = new ArrayList<>();
-            for (int i = 0; i < result.cols.length; ++i)
+            /**
+             * Issue #82:
+             * Use result.numCols instead of result.cols.length.
+             */
+            for (int i = 0; i < result.numCols; ++i)
             {
                 String fieldName = fieldNames.get(i);
                 ColumnVector cv = children.get(i).createColumn(maxSize);
@@ -741,6 +745,12 @@ public final class TypeDescription
                 }
                 result.cols[i] = cv;
             }
+            /**
+             * Issue #82:
+             * Create the column vector for the hidden version column here.
+             */
+            result.cols[result.numCols] =
+                    TypeDescription.createLong().createColumn(maxSize);
         }
         else
         {

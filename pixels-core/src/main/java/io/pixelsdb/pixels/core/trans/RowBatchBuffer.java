@@ -1,6 +1,7 @@
 package io.pixelsdb.pixels.core.trans;
 
 import com.google.common.collect.ImmutableList;
+import io.pixelsdb.pixels.core.vector.LongColumnVector;
 import io.pixelsdb.pixels.core.vector.VectorizedRowBatch;
 
 import java.util.ArrayList;
@@ -30,7 +31,22 @@ public class RowBatchBuffer
     synchronized public void putRowBatch (VectorizedRowBatch rowBatch)
     {
         this.rowBatches.add(rowBatch);
-        // TODO: update delete bitmap and delete ts map.
+        LongColumnVector versionColumn = (LongColumnVector) rowBatch.getVersionColumn();
+        for (int i = 0; i < rowBatch.size; ++i)
+        {
+            long timestamp = versionColumn.vector[i];
+            // TODO: find the target file and update its delete maps.
+            String targetFilePath = "";
+            int targetRowId = 0;
+            boolean find = false;
+            if (find)
+            {
+                DeleteMapStore.Instance().getDeleteBitMap(targetFilePath)
+                        .setIntent(targetRowId);
+                DeleteMapStore.Instance().getDeleteTSMap(targetFilePath)
+                        .setDeleteTimestamp(targetRowId, timestamp);
+            }
+        }
     }
 
     synchronized public List<VectorizedRowBatch> getRowBatches ()

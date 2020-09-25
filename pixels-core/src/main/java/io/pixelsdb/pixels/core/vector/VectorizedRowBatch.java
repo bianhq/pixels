@@ -134,6 +134,11 @@ public class VectorizedRowBatch implements AutoCloseable
         return true;
     }
 
+    public ColumnVector getVersionColumn ()
+    {
+        return this.cols[this.numCols];
+    }
+
     public void setPartitionInfo(int dataColumnCount, int partitionColumnCount)
     {
         this.dataColumnCount = dataColumnCount;
