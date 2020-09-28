@@ -76,8 +76,9 @@ public class DeleteMapStore
      * This method is only used for test purpose before index update is implemented.
      * @return
      */
-    public RowIdentifier generateRandomRowIdentifier ()
+    public RowIdentifier generateRowIdentifier (long tableRowId)
     {
+        /*
         int numFiles = this.bitMaps.keySet().size();
         Random random = new Random(System.nanoTime());
         int fileId = random.nextInt(numFiles);
@@ -86,6 +87,14 @@ public class DeleteMapStore
         int rowNum = this.bitMaps.get(path).getRowNum();
         int rowId = random.nextInt(rowNum);
         double existsRate = random.nextDouble();
-        return new RowIdentifier(path, rowId, existsRate < 0.05);
+        */
+        String path = "/scratch/data/pixels/" + (tableRowId / (10*1000*1000)) + ".pxl";
+        int rowId = (int) (tableRowId % (10*1000*1000));
+        boolean exists = false;
+        if (tableRowId < (100*1000*1000))
+        {
+            exists = true;
+        }
+        return new RowIdentifier(path, rowId, exists);
     }
 }

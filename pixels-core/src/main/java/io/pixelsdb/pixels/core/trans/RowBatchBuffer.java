@@ -31,12 +31,15 @@ public class RowBatchBuffer
     synchronized public void putRowBatch (VectorizedRowBatch rowBatch)
     {
         this.rowBatches.add(rowBatch);
+        // TODO: we have not implemented indexes, so we just use the first column as index column.
+        LongColumnVector indexColumn = (LongColumnVector) rowBatch.cols[0];
         LongColumnVector versionColumn = (LongColumnVector) rowBatch.getVersionColumn();
         for (int i = 0; i < rowBatch.size; ++i)
         {
             long timestamp = versionColumn.vector[i];
+            long indexValue = indexColumn.vector[i];
             // TODO: find the target file and update its delete maps.
-            RowIdentifier rowIdentifier = DeleteMapStore.Instance().generateRandomRowIdentifier();
+            RowIdentifier rowIdentifier = DeleteMapStore.Instance().generateRowIdentifier(indexValue);
             String targetFilePath = rowIdentifier.getFilePath();
             int targetRowId = rowIdentifier.getRowIdInFile();
             boolean find = rowIdentifier.isExistsInFile();
