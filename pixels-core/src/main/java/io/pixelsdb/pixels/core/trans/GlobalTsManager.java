@@ -30,4 +30,14 @@ public class GlobalTsManager
     {
         return this.currTimestamp.getAndIncrement();
     }
+
+    public long currentTimestamp ()
+    {
+        return this.currTimestamp.get();
+    }
+
+    public long rebaseTimestamp (long timestamp)
+    {
+        return this.currTimestamp.getAndSet(timestamp);
+    }
 }

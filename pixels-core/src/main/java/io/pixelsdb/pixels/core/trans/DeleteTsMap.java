@@ -1,7 +1,9 @@
 package io.pixelsdb.pixels.core.trans;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -34,14 +36,18 @@ public class DeleteTsMap
         return visible;
     }
 
-    public Map<Integer, Long> dumpAndRemove (long timestamp)
+    public Map<Integer, Long> dumpAndRemove (long lowWaterMark)
     {
         this.lock.lock();
         Map<Integer, Long> dumped = new HashMap<>();
-        for (int rowId : this.rowIdToTimestampMap.keySet())
+        Set<Integer> rowIds = new HashSet<>(this.rowIdToTimestampMap.keySet());
+        for (int rowId : rowIds)
         {
-            dumped.put(rowId, this.rowIdToTimestampMap.get(rowId));
-            this.rowIdToTimestampMap.remove(rowId);
+            if (this.rowIdToTimestampMap.get(rowId) <= lowWaterMark)
+            {
+                dumped.put(rowId, this.rowIdToTimestampMap.get(rowId));
+                this.rowIdToTimestampMap.remove(rowId);
+            }
         }
         this.lock.unlock();
         return dumped;

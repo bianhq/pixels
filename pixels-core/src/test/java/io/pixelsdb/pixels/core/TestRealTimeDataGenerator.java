@@ -92,43 +92,6 @@ public class TestRealTimeDataGenerator
 
             pixelsWriter.close();
         }
-/*
-        while ((line = reader.readLine()) != null)
-        {
-            if (rowCounter % (10*1000*1000) == 0)
-            {
-                // we create a new pixels file if we can read a next line from the source file.
-                String pixelsFilePath = "file:///home/hank/data/realtime/" + (rowCounter / (10*1000*1000)) + ".pxl";
-                pixelsWriter = PixelsWriterImpl.newBuilder()
-                        .setSchema(schema)
-                        .setPixelStride(10000)
-                        .setRowGroupSize(128*1024*1024)
-                        .setFS(fs)
-                        .setFilePath(new Path(pixelsFilePath))
-                        .setBlockSize(1024L*1024L*1024L)
-                        .setReplication((short) 1)
-                        .setBlockPadding(true)
-                        .setEncoding(true)
-                        .setCompressionBlockSize(1)
-                        .build();
-            }
-            rowCounter++;
-
-            rowBatch.size++;
-            String[] colsInLine = line.split(",");
-            rowBatch.putRow(GlobalTsManager.Instance().getTimestamp(), colsInLine, orderMap);
-
-            if (rowBatch.size >= rowBatch.getMaxSize())
-            {
-                pixelsWriter.addRowBatch(rowBatch);
-                rowBatch.reset();
-                if (rowCounter % (10*1000*1000) == 0)
-                {
-                    pixelsWriter.close();
-                }
-            }
-        }
-*/
 
         reader.close();
     }
@@ -140,53 +103,56 @@ public class TestRealTimeDataGenerator
         String[] cols = {"col0", "col3"};
         option.skipCorruptRecords(true);
         option.tolerantSchemaEvolution(true);
+        long start = System.currentTimeMillis();
         option.includeCols(cols);
-
-        PixelsReader pixelsReader = null;
-        String filePath = "file:///home/hank/data/realtime/2.pxl";
-        Path path = new Path(filePath);
-        Configuration conf = new Configuration();
-        conf.set("fs.hdfs.impl", DistributedFileSystem.class.getName());
-        conf.set("fs.file.impl", org.apache.hadoop.fs.LocalFileSystem.class.getName());
-        try
+        for (int j = 0; j < 10; ++j)
         {
-            FileSystem fs = FileSystem.get(URI.create(filePath), conf);
-            pixelsReader = PixelsReaderImpl
-                    .newBuilder()
-                    .setFS(fs)
-                    .setPath(path)
-                    .setEnableCache(false)
-                    .setPixelsFooterCache(new PixelsFooterCache())
-                    .build();
-        }
-        catch (IOException e)
-        {
-            e.printStackTrace();
-        }
-
-        PixelsRecordReader recordReader = pixelsReader.read(option);
-
-        while (true)
-        {
-            recordReader.prepareBatch(21000);
-            VectorizedRowBatch rowBatch = recordReader.readBatch(21000);
-
-            if (rowBatch.endOfFile)
+            PixelsReader pixelsReader = null;
+            String filePath = "file:///home/hank/data/realtime/" + j + ".pxl";
+            Path path = new Path(filePath);
+            Configuration conf = new Configuration();
+            conf.set("fs.hdfs.impl", DistributedFileSystem.class.getName());
+            conf.set("fs.file.impl", org.apache.hadoop.fs.LocalFileSystem.class.getName());
+            try
             {
-                break;
+                FileSystem fs = FileSystem.get(URI.create(filePath), conf);
+                pixelsReader = PixelsReaderImpl
+                        .newBuilder()
+                        .setFS(fs)
+                        .setPath(path)
+                        .setEnableCache(false)
+                        .setPixelsFooterCache(new PixelsFooterCache())
+                        .build();
+            } catch (IOException e)
+            {
+                e.printStackTrace();
             }
 
-            LongColumnVector col0 = (LongColumnVector) rowBatch.cols[0];
-            LongColumnVector col3 = (LongColumnVector) rowBatch.cols[1];
-            LongColumnVector version = (LongColumnVector) rowBatch.cols[2];
+            PixelsRecordReader recordReader = pixelsReader.read(option);
 
-            for (int i = 0; i < 10; ++i)
+            while (true)
             {
-                System.out.println(col0.vector[i] + "," + col3.vector[i] + "," + version.vector[i]);
-            }
-        }
+                recordReader.prepareBatch(21000);
+                VectorizedRowBatch rowBatch = recordReader.readBatch(21000);
 
-        recordReader.close();
-        pixelsReader.close();
+                if (rowBatch.endOfFile)
+                {
+                    break;
+                }
+
+                LongColumnVector col0 = (LongColumnVector) rowBatch.cols[0];
+                LongColumnVector col3 = (LongColumnVector) rowBatch.cols[1];
+                LongColumnVector version = (LongColumnVector) rowBatch.cols[2];
+
+                for (int i = 0; i < 10; ++i)
+                {
+                    System.out.println(col0.vector[i] + "," + col3.vector[i] + "," + version.vector[i]);
+                }
+            }
+
+            recordReader.close();
+            pixelsReader.close();
+        }
+        System.out.println((System.currentTimeMillis() - start) / 1000.0);
     }
 }

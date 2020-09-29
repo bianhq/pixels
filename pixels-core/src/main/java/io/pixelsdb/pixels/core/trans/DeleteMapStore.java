@@ -59,7 +59,7 @@ public class DeleteMapStore
         if (deleteBitMap != null && deleteTsMap != null)
         {
             Set<Integer> intentRowIds = new HashSet<>();
-            deleteBitMap.getBatchRowIds(intentRowIds, intentRowIds);
+            deleteBitMap.getBatchRowIds(invisibleRowIds, intentRowIds);
             for (int intendRowId : intentRowIds)
             {
                 if (deleteTsMap.isVisible(intendRowId, timestamp) == false)
@@ -88,7 +88,7 @@ public class DeleteMapStore
         int rowId = random.nextInt(rowNum);
         double existsRate = random.nextDouble();
         */
-        String path = "/scratch/data/pixels/" + (tableRowId / (10*1000*1000)) + ".pxl";
+        String path = "/home/hank/data/realtime/" + (tableRowId / (10*1000*1000)) + ".pxl";
         int rowId = (int) (tableRowId % (10*1000*1000));
         boolean exists = false;
         if (tableRowId < (100*1000*1000))
