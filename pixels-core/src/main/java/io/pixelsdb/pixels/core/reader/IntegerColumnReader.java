@@ -158,6 +158,14 @@ public class IntegerColumnReader
                 {
                     if (elementIndex % pixelStride == 0)
                     {
+                        if (elementIndex / pixelStride > 0)
+                        {
+                            /**
+                             * Issue #82:
+                             * Skip the isLong flag if this is not the first stride.
+                             */
+                            inputBuffer.get();
+                        }
                         int pixelId = elementIndex / pixelStride;
                         hasNull = chunkIndex.getPixelStatistics(pixelId).getStatistic().getHasNull();
                         if (hasNull && isNullBitIndex > 0)
@@ -194,6 +202,16 @@ public class IntegerColumnReader
                 {
                     if (elementIndex % pixelStride == 0)
                     {
+                        if (elementIndex / pixelStride > 0)
+                        {
+                            /**
+                             * Issue #82:
+                             * Skip the isLong flag if this is not the first stride.
+                             * TODO: it not completely fixed, error still exists when reading the
+                             * next row batch.
+                             */
+                            inputBuffer.get();
+                        }
                         int pixelId = elementIndex / pixelStride;
                         hasNull = chunkIndex.getPixelStatistics(pixelId).getStatistic().getHasNull();
                         if (hasNull && isNullBitIndex > 0)

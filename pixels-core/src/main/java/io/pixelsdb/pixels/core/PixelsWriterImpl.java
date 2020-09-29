@@ -122,9 +122,8 @@ public class PixelsWriterImpl
          * Issue #82:
          * We use long for the hidden version column, without encoding.
          */
-        // TODO (Issue #82): use delta encoding in the future if delta encoder is implemented.
         TypeDescription versionColumnType = TypeDescription.createLong();
-        columnWriters[children.size()] = createColumnWriter(versionColumnType, false);
+        columnWriters[children.size()] = createColumnWriter(versionColumnType, true);
         fileColStatRecorders[children.size()] = StatsRecorder.create(versionColumnType);
 
         this.rowGroupInfoList = new LinkedList<>();

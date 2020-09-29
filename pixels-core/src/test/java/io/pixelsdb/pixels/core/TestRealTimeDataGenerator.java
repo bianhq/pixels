@@ -81,7 +81,6 @@ public class TestRealTimeDataGenerator
             for (int j = 0; j < 10*1000*1000; ++j)
             {
                 line = reader.readLine();
-                rowBatch.size++;
                 String[] colsInLine = line.split(",");
                 rowBatch.putRow(GlobalTsManager.Instance().getTimestamp(), colsInLine, orderMap);
                 if (rowBatch.size >= rowBatch.getMaxSize())
@@ -167,17 +166,24 @@ public class TestRealTimeDataGenerator
 
         PixelsRecordReader recordReader = pixelsReader.read(option);
 
-        recordReader.prepareBatch(20000);
-        VectorizedRowBatch rowBatch = recordReader.readBatch(20000);
-        System.out.println(rowBatch.size);
-
-        LongColumnVector col0 = (LongColumnVector) rowBatch.cols[0];
-        LongColumnVector col3 = (LongColumnVector) rowBatch.cols[1];
-        LongColumnVector version = (LongColumnVector) rowBatch.cols[2];
-
-        for (int i = 0; i < rowBatch.size; ++i)
+        while (true)
         {
-            System.out.println(col0.vector[i] + "," + col3.vector[i] + "," + version.vector[i]);
+            recordReader.prepareBatch(21000);
+            VectorizedRowBatch rowBatch = recordReader.readBatch(21000);
+
+            if (rowBatch.endOfFile)
+            {
+                break;
+            }
+
+            LongColumnVector col0 = (LongColumnVector) rowBatch.cols[0];
+            LongColumnVector col3 = (LongColumnVector) rowBatch.cols[1];
+            LongColumnVector version = (LongColumnVector) rowBatch.cols[2];
+
+            for (int i = 0; i < 10; ++i)
+            {
+                System.out.println(col0.vector[i] + "," + col3.vector[i] + "," + version.vector[i]);
+            }
         }
 
         recordReader.close();

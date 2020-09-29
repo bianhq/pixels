@@ -700,7 +700,6 @@ public class PixelsRecordReaderImpl
             }
 
             // read vectors
-            System.out.println("result columns: " + resultColumns.length);
             for (int i = 0; i < resultColumns.length; i++)
             {
                 if (!columnVectors[i].duplicated)
