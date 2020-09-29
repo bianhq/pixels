@@ -179,8 +179,11 @@ public class PixelsReaderImpl
                 }
                 // get FileTail
                 long fileLen = fsReader.getFileLength();
+
+                System.out.println(fsReader.getFileLength());
                 fsReader.seek(fileLen - Long.BYTES);
                 long fileTailOffset = fsReader.readLong();
+                System.out.println(fileTailOffset);
                 int fileTailLength = (int) (fileLen - fileTailOffset - Long.BYTES);
                 fsReader.seek(fileTailOffset);
                 byte[] fileTailBuffer = new byte[fileTailLength];

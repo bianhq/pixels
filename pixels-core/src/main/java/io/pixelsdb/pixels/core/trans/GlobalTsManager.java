@@ -28,6 +28,6 @@ public class GlobalTsManager
 
     public long getTimestamp ()
     {
-        return this.currTimestamp.getAndDecrement();
+        return this.currTimestamp.getAndIncrement();
     }
 }

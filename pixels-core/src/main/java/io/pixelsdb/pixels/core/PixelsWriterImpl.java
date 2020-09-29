@@ -112,7 +112,7 @@ public class PixelsWriterImpl
          * We add a hidden column for data version (timestamp) at the end of the user columns.
          */
         this.columnWriters = new ColumnWriter[children.size()+1];
-        fileColStatRecorders = new StatsRecorder[children.size()];
+        fileColStatRecorders = new StatsRecorder[children.size()+1];
         for (int i = 0; i < children.size(); ++i)
         {
             columnWriters[i] = createColumnWriter(children.get(i), encoding);
@@ -125,6 +125,7 @@ public class PixelsWriterImpl
         // TODO (Issue #82): use delta encoding in the future if delta encoder is implemented.
         TypeDescription versionColumnType = TypeDescription.createLong();
         columnWriters[children.size()] = createColumnWriter(versionColumnType, false);
+        fileColStatRecorders[children.size()] = StatsRecorder.create(versionColumnType);
 
         this.rowGroupInfoList = new LinkedList<>();
         this.rowGroupStatisticList = new LinkedList<>();

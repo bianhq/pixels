@@ -205,7 +205,7 @@ public class PixelsRecordReaderImpl
         }
 
         // create column readers
-        List<TypeDescription> columnSchemas = fileSchema.getChildren();
+        List<TypeDescription> columnSchemas = new ArrayList<>(fileSchema.getChildren());
         /**
          * Issue #82:
          * Add the type description of hidden column into columnSchemas.
@@ -700,6 +700,7 @@ public class PixelsRecordReaderImpl
             }
 
             // read vectors
+            System.out.println("result columns: " + resultColumns.length);
             for (int i = 0; i < resultColumns.length; i++)
             {
                 if (!columnVectors[i].duplicated)

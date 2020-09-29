@@ -20,6 +20,11 @@
 package io.pixelsdb.pixels.core;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.web.URLConnectionFactory;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.junit.Test;
@@ -29,6 +34,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URI;
 import java.net.URL;
 import java.net.URLConnection;
 
@@ -94,5 +100,41 @@ public class TestHDFS
         }
         stream.close();
         return file;
+    }
+
+    private void writeFile (String filePath) throws IOException
+    {
+        Configuration conf = new Configuration();
+        conf.set("fs.hdfs.impl", DistributedFileSystem.class.getName());
+        conf.set("fs.file.impl", org.apache.hadoop.fs.LocalFileSystem.class.getName());
+        FileSystem fs = FileSystem.get(URI.create(filePath), conf);
+        FSDataOutputStream outputStream = fs.create(new Path(filePath));
+        for (int i = 0; i < 400*1000*1000; ++i)
+        {
+            outputStream.write(i);
+        }
+        outputStream.close();
+    }
+
+    private void seekAndRead (String filePath) throws IOException
+    {
+        Configuration conf = new Configuration();
+        conf.set("fs.hdfs.impl", DistributedFileSystem.class.getName());
+        conf.set("fs.file.impl", org.apache.hadoop.fs.LocalFileSystem.class.getName());
+        FileSystem fs = FileSystem.get(URI.create(filePath), conf);
+        FSDataInputStream inputStream = fs.open(new Path(filePath));
+        long len = fs.getFileStatus(new Path(filePath)).getLen();
+        System.out.println(len);
+        inputStream.seek(len-8);
+        System.out.println(inputStream.readLong());
+        inputStream.close();
+    }
+
+    @Test
+    public void testReadWrite () throws IOException
+    {
+        String path = "file:///home/hank/data/realtime/0.pxl";
+        //writeFile(path);
+        seekAndRead(path);
     }
 }
