@@ -15,10 +15,7 @@ import org.junit.Test;
 
 import java.io.IOException;
 import java.net.URI;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Created at: 25.09.20
@@ -38,21 +35,22 @@ public class TestRealTimeUpdate
 
     private Set<Integer> delete (String filePath, int numRows)
     {
-        Set<Integer> deletedRowIds = new HashSet<>();
+        //Set<Integer> deletedRowIds = new HashSet<>();
         Random random = new Random(System.nanoTime());
         for (int i = 0; i < numRows; ++i)
         {
             int rowId = random.nextInt(10*1000*1000);
-            while (deletedRowIds.contains(rowId))
+            //while (deletedRowIds.contains(rowId))
             {
                 rowId = random.nextInt(10*1000*1000);
             }
-            deletedRowIds.add(rowId);
+            //deletedRowIds.add(rowId);
             DeleteMapStore.Instance().getDeleteBitMap(filePath).setIntent(rowId);
             DeleteMapStore.Instance().getDeleteTSMap(filePath).setDeleteTimestamp(rowId,
                     GlobalTsManager.Instance().getTimestamp());
         }
-        return deletedRowIds;
+        //return deletedRowIds;
+        return new HashSet<>();
     }
 
     private void cleanIntents (String filePath, long lowWaterMark)
@@ -185,7 +183,12 @@ public class TestRealTimeUpdate
                     {
                         numRows++;
                     }
+                    //if (this.endTimestamp[rowIdInFile] > GlobalTsManager.Instance().currentTimestamp())
+                    {
+
+                    }
                     rowIdInFile++;
+
                 }
 
                 if (rowBatch.endOfFile)
@@ -247,5 +250,34 @@ public class TestRealTimeUpdate
         start = System.currentTimeMillis();
         rowNum = scanAll(11);
         System.out.println("scan " + rowNum + " rows, cost: " + (System.currentTimeMillis()-start)/1000.0 + " (s)");
+    }
+
+    private long[] endTimestamp = new long[110*1000*1000];
+
+    @Test
+    public void testPixelsRead () throws IOException
+    {
+        GlobalTsManager.Instance().rebaseTimestamp(100*1000*1000);
+        buildDeleteMaps();
+        DeleteMapStore.Instance().createDeleteMapForFile(
+                "file:///home/hank/data/realtime/10.pxl",
+                10*1000*1000);
+        long start = System.currentTimeMillis();
+        long rowNum = scanAll(11);
+        System.out.println("scan " + rowNum + " rows, cost: " + (System.currentTimeMillis()-start)/1000.0 + " (s)");
+    }
+
+    @Test
+    public void testCStoreRead () throws IOException
+    {long start = System.currentTimeMillis();
+        GlobalTsManager.Instance().rebaseTimestamp(100*1000*1000);
+        for (int i = 0; i < 110*1000*1000; ++i)
+        {
+            this.endTimestamp[i] = GlobalTsManager.Instance().getTimestamp();
+        }System.out.println("scan " + 0 + " rows, cost: " + (System.currentTimeMillis()-start)/1000.0 + " (s)");
+
+
+        //long rowNum = scanAll(11);
+
     }
 }
