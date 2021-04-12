@@ -1,0 +1,59 @@
+/*
+ * Copyright 2021 PixelsDB.
+ *
+ * This file is part of Pixels.
+ *
+ * Pixels is free software: you can redistribute it and/or modify
+ * it under the terms of the Affero GNU General Public License as
+ * published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * Pixels is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * Affero GNU General Public License for more details.
+ *
+ * You should have received a copy of the Affero GNU General Public
+ * License along with Pixels.  If not, see
+ * <https://www.gnu.org/licenses/>.
+ */
+
+// grpc protocol of pixels metadata
+
+syntax = "proto3";
+
+option java_multiple_files = false;
+option java_package = "io.pixelsdb.pixels.daemon";
+option java_outer_classname = "TimestampProto";
+
+package metadata.proto;
+
+// The metadata services definition.
+service TimestampService {
+    rpc NewTimestamp (GetTimestampRequest) returns (GetTimestampResponse);
+    rpc CurrentTimestamp (GetTimestampRequest) returns (GetTimestampResponse);
+    rpc RebaseTimestamp (RebaseTimestampRequest) returns (RebaseTimestampResponse);
+}
+
+// begin request/response definition for rpc services
+
+message GetTimestampRequest {
+    int32 id = 1;
+}
+
+message GetTimestampResponse {
+    int32 id = 1;
+    int32 errorCode = 2;
+    uint64 timestamp = 3;
+}
+
+message RebaseTimestampRequest {
+    int32 id = 1;
+    uint64 timestamp = 2;
+}
+
+message RebaseTimestampResponse {
+    int32 id = 1;
+    int32 errorCode = 2;
+}
+// end request/response definition for rpc services
