@@ -22,11 +22,12 @@ package io.pixelsdb.pixels.core.stats;
 /**
  * pixels
  *
- * @author guodong
+ * 2021-04-25
+ * @author hank
  */
-public interface TimestampColumnStats extends RangeStats<Long>
+public interface TimeColumnStats extends RangeStats<Integer>
 {
-    Long getMinimum();
+    Integer getMinimum();
 
-    Long getMaximum();
+    Integer getMaximum();
 }

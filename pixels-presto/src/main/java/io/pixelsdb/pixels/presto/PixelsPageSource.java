@@ -31,9 +31,12 @@ import io.pixelsdb.pixels.cache.PixelsCacheReader;
 import io.pixelsdb.pixels.common.exception.FSException;
 import io.pixelsdb.pixels.common.physical.FSFactory;
 import io.pixelsdb.pixels.core.*;
+import io.pixelsdb.pixels.core.predicate.PixelsPredicate;
+import io.pixelsdb.pixels.core.predicate.TupleDomainPixelsPredicate;
 import io.pixelsdb.pixels.core.reader.PixelsReaderOption;
 import io.pixelsdb.pixels.core.reader.PixelsRecordReader;
 import io.pixelsdb.pixels.core.vector.*;
+import io.pixelsdb.pixels.presto.block.TimeArrayBlock;
 import io.pixelsdb.pixels.presto.block.VarcharArrayBlock;
 import io.pixelsdb.pixels.presto.exception.PixelsErrorCode;
 import io.pixelsdb.pixels.presto.impl.PixelsPrestoConfig;
@@ -93,7 +96,16 @@ class PixelsPageSource implements ConnectorPageSource
                 .build();
         getPixelsReaderBySchema(split, cacheReader, pixelsFooterCache);
 
-        this.recordReader = this.pixelsReader.read(this.option);
+        try
+        {
+            this.recordReader = this.pixelsReader.read(this.option);
+        }
+        catch (IOException e)
+        {
+            logger.error("create record reader error: " + e.getMessage());
+            closeWithSuppression(e);
+            throw new PrestoException(PixelsErrorCode.PIXELS_READER_ERROR, e);
+        }
         this.BatchSize = PixelsPrestoConfig.getBatchSize();
     }
 
@@ -258,6 +270,17 @@ class PixelsPageSource implements ConnectorPageSource
         }
         sizeOfData += batchSize;
 
+        /**
+         * Issue #105:
+         * For select count(*) from t, EOF is set here.
+         * Because this.numColumnToRead is 0 and blocks is empty, thus
+         * this.recordReader.readBatch will never be called to get the row batch.
+         */
+        if (this.recordReader.isEndOfFile())
+        {
+            this.endOfFile = true;
+        }
+
         return new Page(batchSize, blocks);
     }
 
@@ -274,8 +297,11 @@ class PixelsPageSource implements ConnectorPageSource
         {
             if (pixelsReader != null)
             {
-                this.completedBytes += recordReader.getCompletedBytes();
-                this.readTimeNanos += recordReader.getReadTimeNanos();
+                if (recordReader != null)
+                {
+                    this.completedBytes += recordReader.getCompletedBytes();
+                    this.readTimeNanos += recordReader.getReadTimeNanos();
+                }
                 pixelsReader.close();
             }
             rowBatch = null;
@@ -445,20 +471,46 @@ class PixelsPageSource implements ConnectorPageSource
 //                    block = blockBuilder.build();
                     block = new ByteArrayBlock(rowBatch.size, bcv.isNull, bcv.vector);
                     break;
+                case "date":
+                    // Issue #94: add date type.
+                    DateColumnVector dtcv = (DateColumnVector) cv;
+                    // In pixels and Presto, date is stored as the number of days from UTC 1970-1-1 0:0:0.
+                    block = new IntArrayBlock(rowBatch.size, dtcv.isNull, dtcv.time);
+                    break;
+                case "time":
+                    // Issue #94: add time type.
+                    TimeColumnVector tcv = (TimeColumnVector) cv;
+                    /**
+                     * In Presto, LongArrayBlock is used for time type. However, in Pixels,
+                     * Time value is stored as int, so here we use TimeArrayBlock, which
+                     * accepts int values but provides getLong method same as LongArrayBlock.
+                     */
+                    block = new TimeArrayBlock(rowBatch.size, tcv.isNull, tcv.time);
+                    break;
                 case "timestamp":
-                    // TODO: optimization needed for timestamp
-                    TimestampColumnVector tcv = (TimestampColumnVector) cv;
+                    TimestampColumnVector tscv = (TimestampColumnVector) cv;
+                    /*
                     for (int i = 0; i < rowBatch.size; ++i)
                     {
-                        if (tcv.isNull[i])
+                        if (tscv.isNull[i])
                         {
                             blockBuilder.appendNull();
                         } else
                         {
-                            type.writeLong(blockBuilder, tcv.time[i]);
+                            type.writeLong(blockBuilder, tscv.time[i]);
                         }
                     }
                     block = blockBuilder.build();
+                     */
+                    /**
+                     * Issue #94: we have confirmed that LongArrayBlock is used for timestamp
+                     * type in Presto.
+                     *
+                     * com.facebook.presto.spi.type.TimestampType extends
+                     * com.facebook.presto.spi.type.AbstractLongType, which creates a LongArrayBlockBuilder.
+                     * And this block builder builds a LongArrayBlock.
+                     */
+                    block = new LongArrayBlock(rowBatch.size, tscv.isNull, tscv.time);
                     break;
                 default:
                     for (int i = 0; i < rowBatch.size; ++i)

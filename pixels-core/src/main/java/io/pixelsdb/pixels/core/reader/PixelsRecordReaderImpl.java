@@ -26,6 +26,7 @@ import io.pixelsdb.pixels.common.metrics.ReadPerfMetrics;
 import io.pixelsdb.pixels.common.physical.PhysicalFSReader;
 import io.pixelsdb.pixels.common.utils.ConfigFactory;
 import io.pixelsdb.pixels.core.*;
+import io.pixelsdb.pixels.core.predicate.PixelsPredicate;
 import io.pixelsdb.pixels.core.stats.ColumnStats;
 import io.pixelsdb.pixels.core.stats.StatsRecorder;
 import io.pixelsdb.pixels.core.vector.ColumnVector;
@@ -39,6 +40,7 @@ import java.util.*;
 
 /**
  * @author guodong
+ * @author hank
  */
 public class PixelsRecordReaderImpl
         implements PixelsRecordReader
@@ -92,7 +94,7 @@ public class PixelsRecordReaderImpl
                                   boolean enableCache,
                                   List<String> cacheOrder,
                                   PixelsCacheReader cacheReader,
-                                  PixelsFooterCache pixelsFooterCache)
+                                  PixelsFooterCache pixelsFooterCache) throws IOException
     {
         this.physicalFSReader = physicalFSReader;
         this.postScript = postScript;
@@ -111,19 +113,21 @@ public class PixelsRecordReaderImpl
         checkBeforeRead();
     }
 
-    private void checkBeforeRead()
+    private void checkBeforeRead() throws IOException
     {
         // get file schema
         List<PixelsProto.Type> fileColTypes = footer.getTypesList();
         if (fileColTypes == null || fileColTypes.isEmpty())
         {
             checkValid = false;
+            //throw new IOException("ISSUE-103: type list is empty.");
             return;
         }
         fileSchema = TypeDescription.createSchema(fileColTypes);
         if (fileSchema.getChildren() == null || fileSchema.getChildren().isEmpty())
         {
             checkValid = false;
+            //throw new IOException("ISSUE-103: file schema is empty.");
             return;
         }
 
@@ -132,6 +136,7 @@ public class PixelsRecordReaderImpl
         if (RGStart >= rgNum)
         {
             checkValid = false;
+            //throw new IOException("ISSUE-103: row group start is out of bound.");
             return;
         }
         if (RGStart + RGLen > rgNum)
@@ -152,6 +157,12 @@ public class PixelsRecordReaderImpl
             resultRowBatch.selected = null;
             resultRowBatch.projectionSize = 0;
             checkValid = true;
+            // Issue #103: init the following members as null.
+            this.includedColumns = null;
+            this.resultColumns = null;
+            this.targetColumns = null;
+            this.readers = null;
+            //throw new IOException("ISSUE-103: included columns is empty.");
             return;
         }
         List<Integer> optionColsIndices = new ArrayList<>();
@@ -181,6 +192,8 @@ public class PixelsRecordReaderImpl
         if (includedColumnsNum != optionIncludedCols.length && !option.isTolerantSchemaEvolution())
         {
             checkValid = false;
+            //throw new IOException("ISSUE-103: includedColumnsNum is " + includedColumnsNum +
+            //        " while optionIncludedCols.length is " + optionIncludedCols.length);
             return;
         }
 
@@ -241,7 +254,14 @@ public class PixelsRecordReaderImpl
         checkValid = true;
     }
 
-    private boolean prepareRead()
+    /**
+     * This method is to prepare the internal status for read operations.
+     * It should only return false when there is an error. Special cases
+     * must be processed correctly and return true.
+     * @return
+     * @throws IOException
+     */
+    private boolean prepareRead() throws IOException
     {
         if (!checkValid)
         {
@@ -262,38 +282,98 @@ public class PixelsRecordReaderImpl
             return false;
         }
 
-        Map<Integer, ColumnStats> columnStatsMap = new HashMap<>();
+        /**
+         * Issue #105:
+         * As we use int32 for NumberOfRows in postScript, we also use int here.
+         */
+        int includedRowNum = 0;
         // read row group statistics and find target row groups
         if (option.getPredicate().isPresent())
         {
-            List<TypeDescription> columnSchemas = fileSchema.getChildren();
             PixelsPredicate predicate = option.getPredicate().get();
-
-            // first, get file level column statistic, if not matches, skip this file
-            List<PixelsProto.ColumnStatistic> fileColumnStatistics = footer.getColumnStatsList();
-            for (int id : targetColumns)
+            if (option.getIncludedCols().length == 0)
             {
-                columnStatsMap.put(id,
-                        StatsRecorder.create(columnSchemas.get(id), fileColumnStatistics.get(id)));
+                /**
+                 * Issue #103:
+                 * If there is no included columns while predicate is present,
+                 * The predicate(s) should be constant expressions.
+                 */
+                if (predicate.matchesAll())
+                {
+                    for (int i = 0; i < RGLen; i++)
+                    {
+                        includedRGs[i] = true;
+                    }
+                    includedRowNum = postScript.getNumberOfRows();
+                }
+                else if (predicate.matchesNone())
+                {
+                    for (int i = 0; i < RGLen; i++)
+                    {
+                        includedRGs[i] = false;
+                    }
+                }
+                else
+                {
+                    throw new IOException(
+                            "predicate does not match none or all while included columns is empty. predicate=" +
+                            predicate.toString());
+                }
             }
-            if (!predicate.matches(postScript.getNumberOfRows(), columnStatsMap))
+            else
             {
-                return false;
-            }
-            columnStatsMap.clear();
+                Map<Integer, ColumnStats> columnStatsMap = new HashMap<>();
+                List<TypeDescription> columnSchemas = fileSchema.getChildren();
 
-            // second, get row group statistics, if not matches, skip the row group
-            for (int i = 0; i < RGLen; i++)
-            {
-                PixelsProto.RowGroupStatistic rowGroupStatistic = rowGroupStatistics.get(i + RGStart);
-                List<PixelsProto.ColumnStatistic> rgColumnStatistics =
-                        rowGroupStatistic.getColumnChunkStatsList();
+                // first, get file level column statistic, if not matches, skip this file
+                List<PixelsProto.ColumnStatistic> fileColumnStatistics = footer.getColumnStatsList();
                 for (int id : targetColumns)
                 {
                     columnStatsMap.put(id,
-                            StatsRecorder.create(columnSchemas.get(id), rgColumnStatistics.get(id)));
+                            StatsRecorder.create(columnSchemas.get(id), fileColumnStatistics.get(id)));
                 }
-                includedRGs[i] = predicate.matches(footer.getRowGroupInfos(i).getNumberOfRows(), columnStatsMap);
+                if (!predicate.matches(postScript.getNumberOfRows(), columnStatsMap))
+                {
+                    /**
+                     * Issue #103:
+                     * 1. matches() is fixed in this issue, but it is not sure if there is
+                     * any further problems with it, as the related domain APIs in presto spi is mysterious.
+                     *
+                     * 2. Whenever predicate does not match any column statistics, we should be return
+                     * false. Instead, we must make sure that includedRGs will be filled with false values.
+                     * By this way, the subsequent methods such as read() an readBatch() can skip all row
+                     * groups in this file without additional overheads, as targetRGs would be empty and
+                     * targetRGNum would be 0.
+                     */
+                    //return false;
+                    for (int i = 0; i < RGLen; i++)
+                    {
+                        includedRGs[i] = false;
+                    }
+                }
+                else
+                {
+                    // columnStatsMap.clear();
+                    // second, get row group statistics, if not matches, skip the row group
+                    for (int i = 0; i < RGLen; i++)
+                    {
+                        // Issue #103: columnStatsMap should be cleared for each row group.
+                        columnStatsMap.clear();
+                        PixelsProto.RowGroupStatistic rowGroupStatistic = rowGroupStatistics.get(i + RGStart);
+                        List<PixelsProto.ColumnStatistic> rgColumnStatistics =
+                                rowGroupStatistic.getColumnChunkStatsList();
+                        for (int id : targetColumns)
+                        {
+                            columnStatsMap.put(id,
+                                    StatsRecorder.create(columnSchemas.get(id), rgColumnStatistics.get(id)));
+                        }
+                        includedRGs[i] = predicate.matches(footer.getRowGroupInfos(i).getNumberOfRows(), columnStatsMap);
+                        if (includedRGs[i] == true)
+                        {
+                            includedRowNum += footer.getRowGroupInfos(i).getNumberOfRows();
+                        }
+                    }
+                }
             }
         }
         else
@@ -302,7 +382,25 @@ public class PixelsRecordReaderImpl
             {
                 includedRGs[i] = true;
             }
+            includedRowNum = postScript.getNumberOfRows();
         }
+
+        /**
+         * Issue #105:
+         * project nothing, must be count(*).
+         * resultRowBatch.projectionSize should only be set in checkBeforeRead().
+         */
+        if (resultRowBatch.projectionSize == 0)
+        {
+            resultRowBatch.size = includedRowNum;
+            resultRowBatch.endOfFile = true;
+            // init the following members as null or 0.
+            targetRGs = null;
+            targetRGNum = 0;
+            rowGroupFooters = null;
+            return true;
+        }
+
         targetRGs = new int[includedRGs.length];
         int targetRGIdx = 0;
         for (int i = 0; i < RGLen; i++)
@@ -341,8 +439,8 @@ public class PixelsRecordReaderImpl
                 }
                 catch (IOException e)
                 {
-                    e.printStackTrace();
-                    return false;
+                    logger.error("failed to read file footer.", e);
+                    throw new IOException("failed to read file footer.", e);
                 }
             }
             // cache hit
@@ -363,9 +461,10 @@ public class PixelsRecordReaderImpl
      * By optimizations in this method in Issue #67 (patch), end-to-end query
      * performance on full cache is improved by about 5% - 10%.
      *
-     * @return if the row groups are read successfully.
+     * @return true if there is row group to read and the row groups are read
+     * successfully.
      */
-    private boolean read()
+    private boolean read() throws IOException
     {
         if (!checkValid)
         {
@@ -376,11 +475,37 @@ public class PixelsRecordReaderImpl
         {
             if (prepareRead() == false)
             {
-                return false;
+                throw new IOException("failed to prepare for read.");
             }
         }
 
         everRead = true;
+
+        /**
+         * Issue #105:
+         * project nothing, must be count(*).
+         * resultRowBatch.size and resultRowBatch.endOfFile have been set
+         * in prepareRead();
+         */
+        if (resultRowBatch.projectionSize == 0)
+        {
+            if (resultRowBatch.endOfFile == false)
+            {
+                throw new IOException("EOF should be set in case of none projection columns");
+            }
+            return true;
+        }
+
+        if (targetRGNum == 0)
+        {
+            /**
+             * Issue #105:
+             * No row groups to read, set EOF and return. EOF will be checked in readBatch().
+             */
+            resultRowBatch.size = 0;
+            resultRowBatch.endOfFile = true;
+            return true;
+        }
 
         // read chunk offset and length of each target column chunks
         this.chunkBuffers = new ByteBuffer[targetRGNum * includedColumns.length];
@@ -395,8 +520,9 @@ public class PixelsRecordReaderImpl
             }
             catch (IOException | FSException e)
             {
-                e.printStackTrace();
-                return false;
+                logger.error("failed to get block id.", e);
+                throw new IOException("failed to get block id.", e);
+                //return false;
             }
             List<ColumnletId> cacheChunks = new ArrayList<>(targetRGNum * targetColumns.length);
             // find cached chunks
@@ -407,7 +533,12 @@ public class PixelsRecordReaderImpl
                 boolean direct = Boolean.parseBoolean(ConfigFactory.Instance().getProperty("cache.read.direct"));
                 for (int rgIdx = 0; rgIdx < targetRGNum; rgIdx++)
                 {
-                    int rgId = rgIdx + RGStart;
+                    /**
+                     * Issue #103:
+                     * rgId should be targetRGs[rgIdx] instead of (rgIdx + RGStart).
+                     */
+                    // int rgId = rgIdx + RGStart;
+                    int rgId = targetRGs[rgIdx];
                     // TODO: not only columnlets in cacheOrder are cached.
                     String cacheIdentifier = rgId + ":" + colId;
                     // if cached, read from cache files
@@ -424,6 +555,12 @@ public class PixelsRecordReaderImpl
                                 rowGroupFooters[rgIdx].getRowGroupIndexEntry();
                         PixelsProto.ColumnChunkIndex chunkIndex =
                                 rowGroupIndex.getColumnChunkIndexEntries(colId);
+                        /**
+                         * Comments added in Issue #103:
+                         * It is not a bug to use rgIdx as the rowGroupId of ChunkId.
+                         * ChunkId is to index the column chunk content in chunkBuffers
+                         * but not the column chunk in Pixels file.
+                         */
                         ChunkId chunk = new ChunkId(rgIdx, colId,
                                 chunkIndex.getChunkOffset(),
                                 chunkIndex.getChunkLength());
@@ -434,13 +571,13 @@ public class PixelsRecordReaderImpl
             }
             // read cached chunks
             long cacheReadStartNano = System.nanoTime();
-            for (ColumnletId chunkId : cacheChunks)
+            for (ColumnletId columnletId : cacheChunks)
             {
-                short rgId = chunkId.rowGroupId;
-                short colId = chunkId.columnId;
+                short rgId = columnletId.rowGroupId;
+                short colId = columnletId.columnId;
 //                long getBegin = System.nanoTime();
                 // TODO (Issue #82): always cache the hidden version column.
-                ByteBuffer columnlet = cacheReader.get(blockId, rgId, colId, chunkId.direct);
+                ByteBuffer columnlet = cacheReader.get(blockId, rgId, colId, columnletId.direct);
 //                long getEnd = System.nanoTime();
 //                logger.debug("[cache get]: " + columnlet.length + "," + (getEnd - getBegin));
                 chunkBuffers[(rgId - RGStart) * includedColumns.length + colId] = columnlet;
@@ -587,6 +724,13 @@ public class PixelsRecordReaderImpl
                     for (ChunkId chunkId : chunkIds)
                     {
                         int chunkLength = (int) chunkId.length;
+                        /**
+                         * Comments added in Issue #103:
+                         * chunkId.rowGroupId does not mean the row group id in the Pixels file,
+                         * it is the index of group that is to be read (some row groups in the file
+                         * may be filtered out by the predicate and will not be read) and it is
+                         * used to calculate the index of chunkBuffers.
+                         */
                         int rgIdx = chunkId.rowGroupId;
                         int colId = chunkId.columnId;
                         chunkBlockBuffer.position(chunkSliceOffset);
@@ -598,13 +742,35 @@ public class PixelsRecordReaderImpl
                 }
             } catch (IOException e)
             {
-                e.printStackTrace();
-                return false;
+                logger.error("failed to read chunks block into buffers.", e);
+                throw new IOException("failed to read chunks block into buffers.", e);
+                // return false;
             }
         }
 
         return true;
     }
+
+    /**
+     * Issue #105:
+     * We use preRowInRG instead of curRowInRG to deal with queries like:
+     * <b>select ... from t where f = null</b>
+     * Such query is invalid but Presto does not reject it. For such query,
+     * Presto will call PageSource.getNextPage() but will not call load() on
+     * the lazy blocks inside the returned page.
+     *
+     * Unfortunately, we have no way to distinguish such type from the normal
+     * queries by the predicates and projection columns from Presto.
+     *
+     * preRowInRG will keep in sync with curRowInRG if readBatch() is actually
+     * called from LazyBlock.load().
+     */
+    private int preRowInRG = 0;
+    /**
+     * Issue #105:
+     * Similar to preRowInRG.
+     */
+    private int preRGIdx = 0;
 
     /**
      * Prepare for the next row batch.
@@ -622,17 +788,62 @@ public class PixelsRecordReaderImpl
                 throw new IOException("Failed to prepare for read.");
             }
         }
-        int curBatchSize = -curRowInRG;
-        for (int rgIdx = curRGIdx; rgIdx < targetRGNum; ++rgIdx)
+
+        /**
+         * Issue #105:
+         * project nothing, must be count(*).
+         * resultRowBatch.size and resultRowBatch.endOfFile have been set
+         * in prepareRead();
+         */
+        if (resultRowBatch.projectionSize == 0)
+        {
+            if (resultRowBatch.endOfFile == false)
+            {
+                throw new IOException("EOF should be set in case of none projection columns");
+            }
+            return resultRowBatch.size;
+        }
+
+        // curBatchSize is the available size of the next batch.
+        int curBatchSize = -preRowInRG;
+        for (int rgIdx = preRGIdx; rgIdx < targetRGNum; ++rgIdx)
         {
             int rgRowCount = (int) footer.getRowGroupInfos(targetRGs[rgIdx]).getNumberOfRows();
             curBatchSize += rgRowCount;
+            if (curBatchSize <= 0)
+            {
+                // continue for the next row group if we reach the empty last row batch.
+                curBatchSize = 0;
+                preRGIdx++;
+                preRowInRG = 0;
+                continue;
+            }
             if (curBatchSize >= batchSize)
             {
                 curBatchSize = batchSize;
-                break;
+                preRowInRG += curBatchSize;
             }
+            else
+            {
+                // Prepare for reading the next row group.
+                preRGIdx++;
+                preRowInRG = 0;
+            }
+            break;
         }
+
+        // Check if this is the end of the file.
+        if (curBatchSize <= 0)
+        {
+            // resultRowBatch is initialized if prepareRead returns true.
+            if (resultRowBatch == null)
+            {
+                throw new IOException("resultRowBatch is unexpected to be null.");
+            }
+            resultRowBatch.endOfFile = true;
+            return 0;
+        }
+
         return curBatchSize;
     }
 
@@ -655,17 +866,11 @@ public class PixelsRecordReaderImpl
             resultRowBatch.selected = null;
             resultRowBatch.projectionSize = 0;
             resultRowBatch.endOfFile = true;
+            resultRowBatch.size = 0;
             return resultRowBatch;
         }
 
-        // project nothing, must be count(*)
-        if (resultRowBatch.projectionSize == 0)
-        {
-            resultRowBatch.size = postScript.getNumberOfRows();
-            resultRowBatch.endOfFile = true;
-            return resultRowBatch;
-        }
-
+        // Issue #105: reset is not a problem for 'select count(*) from t'.
         resultRowBatch.reset();
 
         if (!everRead)
@@ -673,10 +878,24 @@ public class PixelsRecordReaderImpl
             long start = System.nanoTime();
             if (!read())
             {
-                resultRowBatch.endOfFile = true;
-                return resultRowBatch;
+                throw new IOException("failed to read file.");
             }
             readTimeNanos += System.nanoTime() - start;
+        }
+
+        // project nothing, must be count(*)
+        if (resultRowBatch.projectionSize == 0)
+        {
+            /**
+             * Issue #105:
+             * EOF and batch size have been set in prepareRead() and checked in read().
+             */
+            if (resultRowBatch.endOfFile == false)
+            {
+                throw new IOException("EOF should be set in case of none projection columns");
+            }
+            checkValid = false; // Issue #105: to reject continuous read.
+            return resultRowBatch;
         }
 
         // ensure size for result row batch
@@ -719,12 +938,14 @@ public class PixelsRecordReaderImpl
 
             // update current row index in the row group
             curRowInRG += curBatchSize;
+            preRowInRG = curRowInRG; // keep in sync with curRowInRG.
             rowIndex += curBatchSize;
             resultRowBatch.size += curBatchSize;
             // update row group index if current row index exceeds max row count in the row group
             if (curRowInRG >= rgRowCount)
             {
                 curRGIdx++;
+                preRGIdx = curRGIdx; // keep in sync with curRGIdx
                 // if not end of file, update row count
                 if (curRGIdx < targetRGNum)
                 {
@@ -733,10 +954,11 @@ public class PixelsRecordReaderImpl
                 // if end of file, set result vectorized row batch endOfFile
                 else
                 {
+                    checkValid = false; // Issue #105: to reject continuous read.
                     resultRowBatch.endOfFile = true;
                     break;
                 }
-                curRowInRG = 0;
+                preRowInRG = curRowInRG = 0; // keep in sync with curRowInRG.
             }
         }
 
@@ -758,6 +980,21 @@ public class PixelsRecordReaderImpl
             throws IOException
     {
         return readBatch(VectorizedRowBatch.DEFAULT_SIZE);
+    }
+
+    /**
+     * This method is valid after calling prepareBatch or readBatch.
+     * Before that, it will always return false.
+     * @return true if reach EOF.
+     */
+    public boolean isEndOfFile ()
+    {
+        if (this.resultRowBatch != null)
+        {
+            // no need to check checkValid, everPrepared, and everRead.
+            return this.resultRowBatch.endOfFile;
+        }
+        return false;
     }
 
     /**
@@ -836,7 +1073,7 @@ public class PixelsRecordReaderImpl
                 } catch (IOException e)
                 {
                     logger.error("Failed to close column reader.", e);
-                    throw e;
+                    throw new IOException("Failed to close column reader.", e);
                 } finally
                 {
                     readers[i] = null;

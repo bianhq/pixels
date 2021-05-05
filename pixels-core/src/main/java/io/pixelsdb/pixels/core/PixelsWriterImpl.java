@@ -578,6 +578,12 @@ public class PixelsWriterImpl
                 case TIMESTAMP:
                     tmpType.setKind(PixelsProto.Type.Kind.TIMESTAMP);
                     break;
+                case DATE:
+                    tmpType.setKind(PixelsProto.Type.Kind.DATE);
+                    break;
+                case TIME:
+                    tmpType.setKind(PixelsProto.Type.Kind.TIME);
+                    break;
                 default:
                     throw new IllegalArgumentException("Unknown category: " +
                             schema.getCategory());
@@ -610,6 +616,10 @@ public class PixelsWriterImpl
                 return new VarcharColumnWriter(schema, pixelStride, isEncoding);
             case BINARY:
                 return new BinaryColumnWriter(schema, pixelStride, isEncoding);
+            case DATE:
+                return new DateColumnWriter(schema, pixelStride, isEncoding);
+            case TIME:
+                return new TimeColumnWriter(schema, pixelStride, isEncoding);
             case TIMESTAMP:
                 return new TimestampColumnWriter(schema, pixelStride, isEncoding);
             default:

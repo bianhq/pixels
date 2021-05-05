@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 PixelsDB.
+ * Copyright 2021 PixelsDB.
  *
  * This file is part of Pixels.
  *
@@ -19,26 +19,36 @@
  */
 package io.pixelsdb.pixels.core.utils;
 
-import org.junit.Test;
+import java.util.Calendar;
 
 /**
- * Created at: 20-1-8
+ * Created at: 26/04/2021
  * Author: hank
  */
-public class TestDynamicIntArray
+public class DatetimeUtils
 {
-    @Test
-    public void test ()
+    // TODO: currently we assume there are 86400000 millis in a day, without dealing with leap second.
+    private static final int TIMEZONE_OFFSET;
+
+    static
     {
-        DynamicIntArray array = new DynamicIntArray(64);
-        for (int i = 0; i < 1024; ++i)
-        {
-            array.add(i);
-        }
-        int[] ints = array.toArray();
-        for (int i = 0; i < array.size(); ++i)
-        {
-            assert i == ints[i];
-        }
+        Calendar calendar = Calendar.getInstance();
+        TIMEZONE_OFFSET = -(calendar.get(Calendar.ZONE_OFFSET) +
+                calendar.get(Calendar.DST_OFFSET)) / (60 * 1000);
+    }
+
+    public static long dayToMillis (int day)
+    {
+        return day*86400000L+TIMEZONE_OFFSET;
+    }
+
+    public static int millisToDay (long millis)
+    {
+        return (int)((millis-TIMEZONE_OFFSET)/86400000);
+    }
+
+    public static int roundSqlTime (long millis)
+    {
+        return (int)(millis%86400000);
     }
 }
