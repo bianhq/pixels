@@ -19,21 +19,19 @@
  */
 package io.pixelsdb.pixels.core;
 
+import io.pixelsdb.pixels.cache.PixelsCacheConfig;
+import io.pixelsdb.pixels.common.physical.Storage;
+import io.pixelsdb.pixels.common.physical.StorageFactory;
+import io.pixelsdb.pixels.common.utils.Constants;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
-import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.web.URLConnectionFactory;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.junit.Test;
 
 import javax.security.sasl.AuthenticationException;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLConnection;
@@ -45,6 +43,23 @@ import java.net.URLConnection;
  */
 public class TestHDFS
 {
+    @Test
+    public void testScheme() throws IOException
+    {
+        Configuration conf = new Configuration();
+        conf.set("fs.hdfs.impl", org.apache.hadoop.hdfs.DistributedFileSystem.class.getName());
+        conf.set("fs.file.impl", org.apache.hadoop.fs.LocalFileSystem.class.getName());
+        PixelsCacheConfig cacheConfig = new PixelsCacheConfig();
+        FileSystem fs = FileSystem.get(URI.create("hdfs://node01:9000/"), conf);
+        System.out.println(fs.getScheme());
+
+        URI uri = URI.create("s3://node01:9000/scheme/test");
+        System.out.println(uri.getHost());
+        System.out.println(uri.getPort());
+        System.out.println(uri.getPath());
+        System.out.println(uri.getScheme());
+    }
+
     @Test
     public void testGetFileByBlockId()
             throws IOException
@@ -104,11 +119,8 @@ public class TestHDFS
 
     private void writeFile (String filePath) throws IOException
     {
-        Configuration conf = new Configuration();
-        conf.set("fs.hdfs.impl", DistributedFileSystem.class.getName());
-        conf.set("fs.file.impl", org.apache.hadoop.fs.LocalFileSystem.class.getName());
-        FileSystem fs = FileSystem.get(URI.create(filePath), conf);
-        FSDataOutputStream outputStream = fs.create(new Path(filePath));
+        Storage storage = StorageFactory.Instance().getStorage("hdfs");
+        DataOutputStream outputStream = storage.create(filePath, false, Constants.HDFS_BUFFER_SIZE, (short) 1);
         for (int i = 0; i < 400*1000*1000; ++i)
         {
             outputStream.write(i);
@@ -118,12 +130,9 @@ public class TestHDFS
 
     private void seekAndRead (String filePath) throws IOException
     {
-        Configuration conf = new Configuration();
-        conf.set("fs.hdfs.impl", DistributedFileSystem.class.getName());
-        conf.set("fs.file.impl", org.apache.hadoop.fs.LocalFileSystem.class.getName());
-        FileSystem fs = FileSystem.get(URI.create(filePath), conf);
-        FSDataInputStream inputStream = fs.open(new Path(filePath));
-        long len = fs.getFileStatus(new Path(filePath)).getLen();
+        Storage storage = StorageFactory.Instance().getStorage("hdfs");
+        FSDataInputStream inputStream = (FSDataInputStream) storage.open(filePath);
+        long len = storage.getStatus(filePath).getLength();
         System.out.println(len);
         inputStream.seek(len-8);
         System.out.println(inputStream.readLong());

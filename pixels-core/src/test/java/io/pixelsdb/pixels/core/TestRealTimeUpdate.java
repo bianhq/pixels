@@ -1,5 +1,7 @@
 package io.pixelsdb.pixels.core;
 
+import io.pixelsdb.pixels.common.physical.Storage;
+import io.pixelsdb.pixels.common.physical.StorageFactory;
 import io.pixelsdb.pixels.core.reader.PixelsReaderOption;
 import io.pixelsdb.pixels.core.reader.PixelsRecordReader;
 import io.pixelsdb.pixels.core.trans.DeleteBitMap;
@@ -7,15 +9,14 @@ import io.pixelsdb.pixels.core.trans.DeleteMapStore;
 import io.pixelsdb.pixels.core.trans.DeleteTsMap;
 import io.pixelsdb.pixels.core.trans.GlobalTsManager;
 import io.pixelsdb.pixels.core.vector.VectorizedRowBatch;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.net.URI;
-import java.util.*;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
 
 /**
  * Created at: 25.09.20
@@ -91,16 +92,13 @@ public class TestRealTimeUpdate
         VectorizedRowBatch rowBatch = schema.createRowBatch(10000);
         int[] orderMap = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
 
-        Configuration conf = new Configuration();
-        conf.set("fs.hdfs.impl", org.apache.hadoop.hdfs.DistributedFileSystem.class.getName());
-        conf.set("fs.file.impl", org.apache.hadoop.fs.LocalFileSystem.class.getName());
-        FileSystem fs = FileSystem.get(URI.create("file:///home/hank/data/realtime/"), conf);
+        Storage storage = StorageFactory.Instance().getStorage(URI.create(filePath).getScheme());
         PixelsWriter pixelsWriter = PixelsWriterImpl.newBuilder()
                 .setSchema(schema)
                 .setPixelStride(10000)
                 .setRowGroupSize(128*1024*1024)
-                .setFS(fs)
-                .setFilePath(new Path(filePath))
+                .setStorage(storage)
+                .setFilePath(filePath)
                 .setBlockSize(1024L*1024L*1024L)
                 .setReplication((short) 1)
                 .setBlockPadding(true)
@@ -138,17 +136,13 @@ public class TestRealTimeUpdate
             String filePath = "file:///home/hank/data/realtime/" + j + ".pxl";
             Set<Integer> invisibleRowIds = DeleteMapStore.Instance().getInvisibleRowIds(
                     filePath, GlobalTsManager.Instance().currentTimestamp());
-            Path path = new Path(filePath);
-            Configuration conf = new Configuration();
-            conf.set("fs.hdfs.impl", DistributedFileSystem.class.getName());
-            conf.set("fs.file.impl", org.apache.hadoop.fs.LocalFileSystem.class.getName());
             try
             {
-                FileSystem fs = FileSystem.get(URI.create(filePath), conf);
+                Storage storage = StorageFactory.Instance().getStorage(URI.create(filePath).getScheme());
                 pixelsReader = PixelsReaderImpl
                         .newBuilder()
-                        .setFS(fs)
-                        .setPath(path)
+                        .setStorage(storage)
+                        .setPath(filePath)
                         .setEnableCache(false)
                         .setPixelsFooterCache(new PixelsFooterCache())
                         .build();

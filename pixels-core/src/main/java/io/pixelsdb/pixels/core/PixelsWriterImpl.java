@@ -21,6 +21,7 @@ package io.pixelsdb.pixels.core;
 
 import io.pixelsdb.pixels.common.physical.PhysicalWriter;
 import io.pixelsdb.pixels.common.physical.PhysicalWriterUtil;
+import io.pixelsdb.pixels.common.physical.Storage;
 import io.pixelsdb.pixels.common.utils.Constants;
 import io.pixelsdb.pixels.core.PixelsProto.CompressionKind;
 import io.pixelsdb.pixels.core.PixelsProto.RowGroupInformation;
@@ -30,9 +31,7 @@ import io.pixelsdb.pixels.core.stats.StatsRecorder;
 import io.pixelsdb.pixels.core.trans.DeleteMapStore;
 import io.pixelsdb.pixels.core.vector.ColumnVector;
 import io.pixelsdb.pixels.core.vector.VectorizedRowBatch;
-import io.pixelsdb.pixels.core.writer.*;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
+import io.pixelsdb.pixels.core.writer.ColumnWriter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -125,7 +124,7 @@ public class PixelsWriterImpl
          * We use long for the hidden version column, without encoding.
          */
         TypeDescription versionColumnType = TypeDescription.createLong();
-        columnWriters[children.size()] = createColumnWriter(versionColumnType, true);
+        columnWriters[children.size()] = newColumnWriter(versionColumnType, pixelStride, true);
         fileColStatRecorders[children.size()] = StatsRecorder.create(versionColumnType);
 
         this.rowGroupInfoList = new LinkedList<>();
@@ -142,8 +141,8 @@ public class PixelsWriterImpl
         private CompressionKind builderCompressionKind = CompressionKind.NONE;
         private int builderCompressionBlockSize = 0;
         private TimeZone builderTimeZone = TimeZone.getDefault();
-        private FileSystem builderFS;
-        private Path builderFilePath;
+        private Storage builderStorage;
+        private String builderFilePath;
         private long builderBlockSize;
         private short builderReplication = 3;
         private boolean builderBlockPadding = true;
@@ -195,14 +194,14 @@ public class PixelsWriterImpl
             return this;
         }
 
-        public Builder setFS(FileSystem fs)
+        public Builder setStorage(Storage storage)
         {
-            this.builderFS = requireNonNull(fs);
+            this.builderStorage = requireNonNull(storage);
 
             return this;
         }
 
-        public Builder setFilePath(Path filePath)
+        public Builder setFilePath(String filePath)
         {
             this.builderFilePath = requireNonNull(filePath);
 
@@ -242,9 +241,18 @@ public class PixelsWriterImpl
         public PixelsWriter build()
                 throws PixelsWriterException
         {
-            PhysicalWriter fsWriter = PhysicalWriterUtil.newPhysicalFSWriter(
-                    this.builderFS, this.builderFilePath, this.builderBlockSize, this.builderReplication,
-                    this.builderBlockPadding);
+            PhysicalWriter fsWriter = null;
+            try
+            {
+                fsWriter = PhysicalWriterUtil.newPhysicalWriter(
+                        this.builderStorage, this.builderFilePath, this.builderBlockSize, this.builderReplication,
+                        this.builderBlockPadding);
+            } catch (IOException e)
+            {
+                LOGGER.error("Failed to create PhysicalWriter");
+                throw new PixelsWriterException(
+                        "Failed to create PixelsWriter due to error of creating PhysicalWriter", e);
+            }
             checkArgument(!requireNonNull(builderSchema.getChildren(), "schema is null").isEmpty(),
                     "schema is empty");
 
