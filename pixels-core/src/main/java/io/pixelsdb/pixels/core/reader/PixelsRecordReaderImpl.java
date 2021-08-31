@@ -83,6 +83,7 @@ public class PixelsRecordReaderImpl
     private long diskReadBytes = 0L;
     private long cacheReadBytes = 0L;
     private long readTimeNanos = 0L;
+    private long memoryUsage = 0L;
 
     public PixelsRecordReaderImpl(PhysicalReader physicalReader,
                                   PixelsProto.PostScript postScript,
@@ -577,6 +578,7 @@ public class PixelsRecordReaderImpl
 //                long getBegin = System.nanoTime();
                 // TODO (Issue #82): always cache the hidden version column.
                 ByteBuffer columnlet = cacheReader.get(blockId, rgId, colId, columnletId.direct);
+                memoryUsage += columnletId.direct ? 0 : columnlet.capacity();
 //                long getEnd = System.nanoTime();
 //                logger.debug("[cache get]: " + columnlet.length + "," + (getEnd - getBegin));
                 chunkBuffers[(rgId - RGStart) * includedColumns.length + colId] = columnlet;
@@ -694,6 +696,7 @@ public class PixelsRecordReaderImpl
                     int length = (int) seq.getLength();
                     diskReadBytes += length;
                     ByteBuffer chunkBlockBuffer = ByteBuffer.allocate(length);
+                    memoryUsage += length;
 //                if (enableMetrics)
 //                {
 //                    long seekStart = System.currentTimeMillis();
@@ -1041,6 +1044,12 @@ public class PixelsRecordReaderImpl
     public long getReadTimeNanos()
     {
         return readTimeNanos;
+    }
+
+    @Override
+    public long getMemoryUsage()
+    {
+        return memoryUsage + resultRowBatch.getMemoryUsage();
     }
 
     /**

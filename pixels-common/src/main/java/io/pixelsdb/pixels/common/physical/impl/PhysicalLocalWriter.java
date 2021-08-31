@@ -99,6 +99,6 @@ public class PhysicalLocalWriter implements PhysicalWriter
     @Override
     public String getPath()
     {
-        return null;
+        return path;
     }
 }
