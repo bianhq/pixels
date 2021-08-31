@@ -62,15 +62,7 @@ public class PhysicalHDFSWriter
         this.replication = replication;
         this.addBlockPadding = addBlockPadding;
 
-        DataOutputStream dos = null;
-        try
-        {
-            dos = hdfs.create(path, false, Constants.HDFS_BUFFER_SIZE, replication, blockSize);
-        }
-        catch (IOException e)
-        {
-            e.printStackTrace();
-        }
+        DataOutputStream dos = hdfs.create(path, false, Constants.HDFS_BUFFER_SIZE, replication, blockSize);
 
         this.rawWriter = (FSDataOutputStream) dos;
     }
@@ -128,11 +120,7 @@ public class PhysicalHDFSWriter
         rawWriter.flush();
     }
 
-    public Storage getStorage()
-    {
-        return hdfs;
-    }
-
+    @Override
     public String getPath()
     {
         return path;
