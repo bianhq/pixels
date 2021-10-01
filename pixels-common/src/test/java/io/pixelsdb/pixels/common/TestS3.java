@@ -134,9 +134,6 @@ public class TestS3
     @Test
     public void testEnclosure() throws InterruptedException
     {
-        //byte[] bytes = new byte[100];
-        //PixelsProto.RowGroupFooter footer = PixelsProto.RowGroupFooter.parseFrom(ByteBuffer.wrap(null));
-        //System.out.println(footer);
         AtomicInteger integer = new AtomicInteger(0);
         for (int i = 0; i < 3; ++i)
         {

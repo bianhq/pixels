@@ -47,6 +47,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static com.google.common.base.Preconditions.checkState;
 import static java.util.Objects.requireNonNull;
@@ -337,6 +338,21 @@ class PixelsPageSource implements ConnectorPageSource
             return;
         }
         closed = true;
+    }
+
+    /**
+     * Returns a future that will be completed when the page source becomes
+     * unblocked.  If the page source is not blocked, this method should return
+     * {@code NOT_BLOCKED}.
+     */
+    @Override
+    public CompletableFuture<?> isBlocked()
+    {
+        if (this.recordReader == null)
+        {
+            return CompletableFuture.completedFuture(null);
+        }
+        return this.recordReader.isReadCompleted();
     }
 
     private void closeWithSuppression(Throwable throwable)

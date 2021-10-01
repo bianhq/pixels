@@ -145,9 +145,7 @@ public interface Scheduler
             assert actionFutures.size() == size;
             if (size <= 0)
             {
-                CompletableFuture<Void> future = new CompletableFuture<>();
-                future.complete(null);
-                return future;
+                return CompletableFuture.completedFuture(null);
             }
             CompletableFuture[] fs = new CompletableFuture[size];
             for (int i = 0; i < size; ++i)

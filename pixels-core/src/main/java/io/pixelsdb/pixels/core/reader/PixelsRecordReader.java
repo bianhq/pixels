@@ -22,6 +22,7 @@ package io.pixelsdb.pixels.core.reader;
 import io.pixelsdb.pixels.core.vector.VectorizedRowBatch;
 
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * @author guodong
@@ -62,6 +63,14 @@ public interface PixelsRecordReader
      * @return true if reach EOF.
      */
     boolean isEndOfFile ();
+
+    /**
+     * Whether the storage reading is completed. Note that cache reading
+     * is not considered here. The returned CompletableFuture will complete
+     * when the read is completed.
+     * @return
+     */
+    CompletableFuture<?> isReadCompleted();
 
     /**
      * Get current row number

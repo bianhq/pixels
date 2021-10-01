@@ -42,6 +42,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
@@ -93,6 +94,9 @@ public class PixelsRecordReaderImpl
     private long readTimeNanos = 0L;
     private long memoryUsage = 0L;
 
+    private CompletableFuture<?> prepareCompleteFuture;
+    private CompletableFuture<?> readCompleteFuture;
+
     public PixelsRecordReaderImpl(PhysicalReader physicalReader,
                                   PixelsProto.PostScript postScript,
                                   PixelsProto.Footer footer,
@@ -118,10 +122,12 @@ public class PixelsRecordReaderImpl
         this.cacheReader = cacheReader;
         this.pixelsFooterCache = pixelsFooterCache;
         this.fileName = this.physicalReader.getName();
+        this.prepareCompleteFuture = null;
+        this.readCompleteFuture = new CompletableFuture<Void>();
         checkBeforeRead();
     }
 
-    private void checkBeforeRead() throws IOException
+    private void checkBeforeRead()
     {
         // get file schema
         List<PixelsProto.Type> fileColTypes = footer.getTypesList();
@@ -450,11 +456,10 @@ public class PixelsRecordReaderImpl
         Scheduler scheduler = SchedulerFactory.Instance().getScheduler();
         try
         {
-            scheduler.executeBatch(physicalReader, requestBatch, actionFutures).get();
+            this.prepareCompleteFuture = scheduler.executeBatch(physicalReader, requestBatch, actionFutures);
         } catch (Exception e)
         {
-            throw new IOException("Failed to read row group footers, " +
-                    "only the last error is thrown, check the logs for more information.", e);
+            throw new IOException("Failed to read row group footers.", e);
         }
         return true;
     }
@@ -517,6 +522,20 @@ public class PixelsRecordReaderImpl
         // read chunk offset and length of each target column chunks
         this.chunkBuffers = new AtomicReferenceArray<>(targetRGNum * includedColumns.length);
         List<ChunkId> diskChunks = new ArrayList<>(targetRGNum * targetColumns.length);
+
+        if (this.prepareCompleteFuture == null)
+        {
+            throw new IOException("Read is not prepared.");
+        }
+
+        try
+        {
+            this.prepareCompleteFuture.get();
+        } catch (InterruptedException | ExecutionException e)
+        {
+            throw new IOException("Errors occur during read preparation.", e);
+        }
+
         // read cached data which are in need
         if (enableCache)
         {
@@ -721,15 +740,29 @@ public class PixelsRecordReaderImpl
             Scheduler scheduler = SchedulerFactory.Instance().getScheduler();
             try
             {
-                scheduler.executeBatch(physicalReader, requestBatch, actionFutures).get();
+                scheduler.executeBatch(physicalReader, requestBatch, actionFutures)
+                        .whenComplete((resp, err) -> this.readCompleteFuture.complete(null));
+
             } catch (Exception e)
             {
-                throw new IOException("Failed to read chunks block into buffers, " +
-                        "only the last error is thrown, check the logs for more information.", e);
+                throw new IOException("Failed to read chunks block into buffers.", e);
             }
         }
 
         return true;
+    }
+
+    /**
+     * Whether the storage reading is completed. Note that cache reading
+     * is not considered here. The returned CompletableFuture will complete
+     * when the read is completed.
+     *
+     * @return
+     */
+    @Override
+    public CompletableFuture<?> isReadCompleted()
+    {
+        return this.readCompleteFuture;
     }
 
     /**
@@ -887,6 +920,14 @@ public class PixelsRecordReaderImpl
         if (curRGIdx < targetRGNum)
         {
             rgRowCount = (int) footer.getRowGroupInfos(targetRGs[curRGIdx]).getNumberOfRows();
+        }
+
+        try
+        {
+            this.readCompleteFuture.get();
+        } catch (InterruptedException | ExecutionException e)
+        {
+            throw new IOException("Error occur during file reading.", e);
         }
 
         ColumnVector[] columnVectors = resultRowBatch.cols;
