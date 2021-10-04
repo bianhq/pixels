@@ -42,6 +42,8 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
@@ -94,8 +96,13 @@ public class PixelsRecordReaderImpl
     private long readTimeNanos = 0L;
     private long memoryUsage = 0L;
 
-    private CompletableFuture<?> prepareCompleteFuture;
-    private CompletableFuture<?> readCompleteFuture;
+    private volatile CompletableFuture<?> prepareCompleteFuture;
+    /**
+     * map from column chunk buffer index to the CompletableFuture of the read of the column chunk.
+     * It is not initialized in the constructor, so much be initialized before using.
+     */
+    private ConcurrentMap<Integer, CompletableFuture<ByteBuffer>> readCompleteActions;
+    private volatile CompletableFuture<?> decodeCompleteFuture;
 
     public PixelsRecordReaderImpl(PhysicalReader physicalReader,
                                   PixelsProto.PostScript postScript,
@@ -123,7 +130,8 @@ public class PixelsRecordReaderImpl
         this.pixelsFooterCache = pixelsFooterCache;
         this.fileName = this.physicalReader.getName();
         this.prepareCompleteFuture = null;
-        this.readCompleteFuture = new CompletableFuture<Void>();
+        this.readCompleteActions = null;
+        this.decodeCompleteFuture = new CompletableFuture<Void>();
         checkBeforeRead();
     }
 
@@ -456,7 +464,8 @@ public class PixelsRecordReaderImpl
         Scheduler scheduler = SchedulerFactory.Instance().getScheduler();
         try
         {
-            this.prepareCompleteFuture = scheduler.executeBatch(physicalReader, requestBatch, actionFutures);
+            scheduler.executeBatch(physicalReader, requestBatch);
+            this.prepareCompleteFuture = requestBatch.completeActions(actionFutures);
         } catch (Exception e)
         {
             throw new IOException("Failed to read row group footers.", e);
@@ -694,7 +703,7 @@ public class PixelsRecordReaderImpl
              * by setting read.request.scheduler=sortmerge.
              */
             Scheduler.RequestBatch requestBatch = new Scheduler.RequestBatch(diskChunks.size());
-            List<CompletableFuture> actionFutures = new ArrayList<>(diskChunks.size());
+            this.readCompleteActions = new ConcurrentHashMap<>(diskChunks.size());
             for (ChunkId chunk : diskChunks)
             {
                 /**
@@ -724,14 +733,18 @@ public class PixelsRecordReaderImpl
                  * readCost.setMs(readTimeMs);
                  * readPerfMetrics.addSeqRead(readCost);
                  */
-                actionFutures.add(requestBatch.add(new Scheduler.Request(chunk.offset, (int)chunk.length))
+                CompletableFuture<ByteBuffer> action = //new CompletableFuture<>();
+                requestBatch.add(new Scheduler.Request(chunk.offset, (int)chunk.length));
+                        /*
                         .whenComplete((resp, err) ->
                 {
                     if (resp != null)
                     {
                         chunkBuffers.set(rgIdx * numCols + colId, resp);
+                        action.complete(true);
                     }
-                }));
+                });*/
+                this.readCompleteActions.put(rgIdx * numCols + colId, action);
                 // don't update statistics in whenComplete as it may be executed in other threads.
                 diskReadBytes += chunk.length;
                 memoryUsage += chunk.length;
@@ -740,8 +753,7 @@ public class PixelsRecordReaderImpl
             Scheduler scheduler = SchedulerFactory.Instance().getScheduler();
             try
             {
-                scheduler.executeBatch(physicalReader, requestBatch, actionFutures)
-                        .whenComplete((resp, err) -> this.readCompleteFuture.complete(null));
+                scheduler.executeBatch(physicalReader, requestBatch);
 
             } catch (Exception e)
             {
@@ -762,7 +774,7 @@ public class PixelsRecordReaderImpl
     @Override
     public CompletableFuture<?> isReadCompleted()
     {
-        return this.readCompleteFuture;
+        return this.decodeCompleteFuture;
     }
 
     /**
@@ -922,15 +934,9 @@ public class PixelsRecordReaderImpl
             rgRowCount = (int) footer.getRowGroupInfos(targetRGs[curRGIdx]).getNumberOfRows();
         }
 
-        try
-        {
-            this.readCompleteFuture.get();
-        } catch (InterruptedException | ExecutionException e)
-        {
-            throw new IOException("Error occur during file reading.", e);
-        }
-
         ColumnVector[] columnVectors = resultRowBatch.cols;
+        // In most cases, the body of the following while loop is only executed once.
+        List<CompletableFuture<?>> decodeActions = new ArrayList<>(resultColumns.length);
         while (resultRowBatch.size < batchSize && curRowInRG < rgRowCount)
         {
             // update current batch size
@@ -953,8 +959,35 @@ public class PixelsRecordReaderImpl
                             .getColumnChunkIndexEntries(
                                     resultColumns[i]);
                     // TODO: read chunk buffer lazily when a column block is read by PixelsPageSource.
-                    readers[i].read(chunkBuffers.get(index), encoding, curRowInRG, curBatchSize,
-                            postScript.getPixelStride(), resultRowBatch.size, columnVectors[i], chunkIndex);
+                    if (this.readCompleteActions.containsKey(index) && chunkBuffers.get(index) == null)
+                    {
+                        int fi = i;
+                        int fCurBatchSize = curBatchSize;
+                        int fCurRowInRG = curRowInRG;
+                        int fResultRowBatchSize = resultRowBatch.size;
+                        decodeActions.add(this.readCompleteActions.get(index).whenCompleteAsync((resp, err) ->
+                        {
+                            if (resp != null)
+                            {
+                                try
+                                {
+                                    chunkBuffers.set(index, resp);
+                                    readers[fi].read(resp, encoding, fCurRowInRG, fCurBatchSize,
+                                            postScript.getPixelStride(), fResultRowBatchSize, columnVectors[fi], chunkIndex);
+                                } catch (IOException e)
+                                {
+                                    RuntimeException re = new RuntimeException("Failed to read column from chunk buffer.");
+                                    re.addSuppressed(e);
+                                    throw re;
+                                }
+                            }
+                        }));
+                    }
+                    else
+                    {
+                        readers[i].read(chunkBuffers.get(index), encoding, curRowInRG, curBatchSize,
+                                postScript.getPixelStride(), resultRowBatch.size, columnVectors[i], chunkIndex);
+                    }
                 }
             }
 
@@ -983,6 +1016,10 @@ public class PixelsRecordReaderImpl
                 preRowInRG = curRowInRG = 0; // keep in sync with curRowInRG.
             }
         }
+
+        this.decodeCompleteFuture = CompletableFuture.allOf(decodeActions.toArray(new CompletableFuture<?>[0]));
+
+        this.decodeCompleteFuture.join();
 
         for (ColumnVector cv : columnVectors)
         {

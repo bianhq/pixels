@@ -44,6 +44,17 @@ public class TestS3
     }
 
     @Test
+    public void testFuture() throws InterruptedException
+    {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        future.complete(null);
+        Thread.sleep(3000);
+        future.whenComplete((resp, err) -> System.out.println("complete."));
+        future.whenComplete((resp, err) -> System.out.println("complete2."));
+        future.join();
+    }
+
+    @Test
     public void testS3Writer() throws IOException
     {
         PhysicalWriter writer = PhysicalWriterUtil.newPhysicalWriter(Storage.Scheme.s3, "pixels-01/object-4",

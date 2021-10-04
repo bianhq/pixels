@@ -35,16 +35,14 @@ import java.util.concurrent.CompletableFuture;
 public interface Scheduler
 {
     /**
-     * Execute a batch of read requests, and return the future of the completion of
-     * all the requests.
+     * Execute a batch of read requests. The completion future of all the requests in
+     * the batch can be got from batch.completeAll().
      * @param reader
      * @param batch
      * @return should never return null.
      * @throws IOException
      */
-    CompletableFuture<Void> executeBatch(PhysicalReader reader, RequestBatch batch,
-                                         List<CompletableFuture> actionFutures)
-            throws IOException;
+    void executeBatch(PhysicalReader reader, RequestBatch batch) throws IOException;
 
     class Request implements Comparable<Request>
     {
@@ -87,6 +85,8 @@ public interface Scheduler
         private int size;
         private List<Request> requests;
         private List<CompletableFuture<ByteBuffer>> futures;
+
+        private static CompletableFuture<Void> DONE = CompletableFuture.completedFuture(null);
 
         public RequestBatch()
         {
@@ -136,16 +136,37 @@ public interface Scheduler
         }
 
         /**
-         * If batch is empty, this method returns and completed future.
+         * Return the completable future of all the requests in this batch.
+         * If batch is empty, this method returns an completed future.
          * @return
          */
-        public CompletableFuture<Void> completeAll(List<CompletableFuture> actionFutures)
+        public CompletableFuture<Void> completeAll()
+        {
+            if (size <= 0)
+            {
+                return DONE;
+            }
+            CompletableFuture[] fs = new CompletableFuture[size];
+            for (int i = 0; i < size; ++i)
+            {
+                fs[i] = this.futures.get(i);
+            }
+            return CompletableFuture.allOf(fs);
+        }
+
+        /**
+         * Return the completable future of all the given actions for the completion
+         * of the requests.
+         * If batch is empty, this method returns an completed future.
+         * @return
+         */
+        public CompletableFuture<Void> completeActions(List<CompletableFuture> actionFutures)
         {
             assert actionFutures != null;
             assert actionFutures.size() == size;
             if (size <= 0)
             {
-                return CompletableFuture.completedFuture(null);
+                return DONE;
             }
             CompletableFuture[] fs = new CompletableFuture[size];
             for (int i = 0; i < size; ++i)

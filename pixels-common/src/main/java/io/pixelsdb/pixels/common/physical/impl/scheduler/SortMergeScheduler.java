@@ -51,12 +51,11 @@ public class SortMergeScheduler implements Scheduler
     }
 
     @Override
-    public CompletableFuture<Void> executeBatch(PhysicalReader reader, RequestBatch batch,
-                                                List<CompletableFuture> actionFutures) throws IOException
+    public void executeBatch(PhysicalReader reader, RequestBatch batch) throws IOException
     {
         if (batch.size() <= 0)
         {
-            return batch.completeAll(actionFutures);
+            return;
         }
         List<CompletableFuture<ByteBuffer>> futures = batch.getFutures();
         List<Request> requests = batch.getRequests();
@@ -109,8 +108,6 @@ public class SortMergeScheduler implements Scheduler
                 merged.complete(buffer);
             }
         }
-
-        return batch.completeAll(actionFutures);
     }
 
     class RequestFuture implements Comparable<RequestFuture>
