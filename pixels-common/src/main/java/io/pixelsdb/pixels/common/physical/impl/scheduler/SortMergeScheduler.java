@@ -84,7 +84,8 @@ public class SortMergeScheduler implements Scheduler
         {
             for (MergedRequest merged : mergedRequests)
             {
-                reader.readAsync(merged.getStart(), merged.getLength()).whenComplete((resp, err) ->
+                String path = reader.getPath();
+                reader.readAsync(merged.getStart(), merged.getLength()).thenAccept(resp ->
                 {
                     if (resp != null)
                     {
@@ -93,8 +94,8 @@ public class SortMergeScheduler implements Scheduler
                     else
                     {
                         logger.error("Failed to read asynchronously from path '" +
-                                reader.getPath() + "'.", err);
-                        err.printStackTrace();
+                                path + "'.");
+                        //err.printStackTrace();
                     }
                 });
             }

@@ -41,10 +41,7 @@ import org.apache.logging.log4j.Logger;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
@@ -55,6 +52,8 @@ public class PixelsRecordReaderImpl
         implements PixelsRecordReader
 {
     private static final Logger logger = LogManager.getLogger(PixelsRecordReaderImpl.class);
+
+    private static final ExecutorService decodingService = Executors.newFixedThreadPool(20);
 
     private final PhysicalReader physicalReader;
     private final PixelsProto.PostScript postScript;
@@ -965,7 +964,7 @@ public class PixelsRecordReaderImpl
                         int fCurBatchSize = curBatchSize;
                         int fCurRowInRG = curRowInRG;
                         int fResultRowBatchSize = resultRowBatch.size;
-                        decodeActions.add(this.readCompleteActions.get(index).whenCompleteAsync((resp, err) ->
+                        decodeActions.add(this.readCompleteActions.get(index).thenAcceptAsync(resp ->
                         {
                             if (resp != null)
                             {
@@ -981,7 +980,7 @@ public class PixelsRecordReaderImpl
                                     throw re;
                                 }
                             }
-                        }));
+                        }, decodingService));
                     }
                     else
                     {

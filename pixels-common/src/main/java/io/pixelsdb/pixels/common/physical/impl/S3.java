@@ -38,6 +38,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -70,9 +71,10 @@ public class S3 implements Storage
         InitId(S3_ID_KEY);
 
         S3AsyncClientBuilder builder = S3AsyncClient.builder()
-                .httpClientBuilder(NettyNioAsyncHttpClient.builder()
+                .httpClientBuilder(NettyNioAsyncHttpClient.builder().connectionTimeout(Duration.ofSeconds(60))
+                        .connectionAcquisitionTimeout(Duration.ofSeconds(60))
                         .eventLoopGroup(SdkEventLoopGroup.builder().numberOfThreads(20).build())
-                        .maxConcurrency(100).maxPendingConnectionAcquires(10_000));
+                        .maxConcurrency(200).maxPendingConnectionAcquires(50_000));
         s3Async = builder.build();
 
         s3 = S3Client.builder().build();

@@ -21,6 +21,7 @@ package io.pixelsdb.pixels.common.physical.impl;
 
 import io.pixelsdb.pixels.common.physical.PhysicalReader;
 import io.pixelsdb.pixels.common.physical.Storage;
+import io.pixelsdb.pixels.common.utils.ConfigFactory;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import software.amazon.awssdk.core.ResponseBytes;
@@ -41,6 +42,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class PhysicalS3Reader implements PhysicalReader
 {
     private static Logger logger = LogManager.getLogger(PhysicalS3Reader.class);
+
+    private static boolean enableAsync = false;
 
     private S3 s3;
     private S3.Path path;
@@ -71,6 +74,7 @@ public class PhysicalS3Reader implements PhysicalReader
         this.length = this.s3.getStatus(path).getLength();
         this.position = new AtomicLong(0);
         this.client = this.s3.getClient();
+        enableAsync = Boolean.parseBoolean(ConfigFactory.Instance().getProperty("s3.enable.async"));
     }
 
     private String toRange(long start, int length)
@@ -82,7 +86,7 @@ public class PhysicalS3Reader implements PhysicalReader
     }
 
     @Override
-    public long getFileLength() throws IOException
+    public long getFileLength()
     {
         return length;
     }
@@ -140,8 +144,7 @@ public class PhysicalS3Reader implements PhysicalReader
     @Override
     public boolean supportsAsync()
     {
-        // TODO: async read does not work properly.
-        return true;
+        return enableAsync;
     }
 
     @Override
@@ -158,20 +161,18 @@ public class PhysicalS3Reader implements PhysicalReader
                 client.getObject(request, AsyncResponseTransformer.toBytes());
         try
         {
-            CompletableFuture<ByteBuffer> futureBuffer = new CompletableFuture<>();
-            future.whenComplete((resp, err) ->
+            return future.thenApply(resp ->
             {
                 if (resp != null)
                 {
-                    futureBuffer.complete(ByteBuffer.wrap(resp.asByteArray()));
+                    return ByteBuffer.wrap(resp.asByteArray());
                 }
                 else
                 {
-                    logger.error("Failed complete the asynchronous read.", err);
-                    err.printStackTrace();
+                    logger.error("Failed complete the asynchronous read.");
+                    return null;
                 }
             });
-            return futureBuffer;
         } catch (Exception e)
         {
             throw new IOException("Failed to read object.", e);

@@ -350,7 +350,7 @@ class PixelsPageSource implements ConnectorPageSource
     {
         if (this.recordReader == null)
         {
-            return CompletableFuture.completedFuture(null);
+            return NOT_BLOCKED;
         }
         return this.recordReader.isReadCompleted();
     }
