@@ -53,7 +53,7 @@ public class PixelsRecordReaderImpl
 {
     private static final Logger logger = LogManager.getLogger(PixelsRecordReaderImpl.class);
 
-    private static final ExecutorService decodingService = Executors.newFixedThreadPool(20);
+    private static final ExecutorService decodingService = Executors.newCachedThreadPool();
 
     private final PhysicalReader physicalReader;
     private final PixelsProto.PostScript postScript;
@@ -732,17 +732,13 @@ public class PixelsRecordReaderImpl
                  * readCost.setMs(readTimeMs);
                  * readPerfMetrics.addSeqRead(readCost);
                  */
-                CompletableFuture<ByteBuffer> action = //new CompletableFuture<>();
+
+                /**
+                 * chunkBuffers.set(rgIdx * numCols + colId, resp);
+                 * is moved to action.thenAcceptAsync() in readBatch().
+                 */
+                CompletableFuture<ByteBuffer> action =
                 requestBatch.add(new Scheduler.Request(chunk.offset, (int)chunk.length));
-                        /*
-                        .whenComplete((resp, err) ->
-                {
-                    if (resp != null)
-                    {
-                        chunkBuffers.set(rgIdx * numCols + colId, resp);
-                        action.complete(true);
-                    }
-                });*/
                 this.readCompleteActions.put(rgIdx * numCols + colId, action);
                 // don't update statistics in whenComplete as it may be executed in other threads.
                 diskReadBytes += chunk.length;

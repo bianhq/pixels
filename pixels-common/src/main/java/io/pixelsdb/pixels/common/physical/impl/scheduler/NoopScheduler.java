@@ -57,7 +57,8 @@ public class NoopScheduler implements Scheduler
             {
                 CompletableFuture<ByteBuffer> future = futures.get(i);
                 Request request = requests.get(i);
-                reader.readAsync(request.start, request.length).whenComplete((resp, err) ->
+                String path = reader.getPath();
+                reader.readAsync(request.start, request.length).thenAccept(resp ->
                 {
                     if (resp != null)
                     {
@@ -65,9 +66,7 @@ public class NoopScheduler implements Scheduler
                     }
                     else
                     {
-                        logger.error("Failed to read asynchronously from path '" +
-                                reader.getPath() + "'.", err);
-                        err.printStackTrace();
+                        logger.error("Failed to read asynchronously from path '" + path + "'.");
                     }
                 });
             }
