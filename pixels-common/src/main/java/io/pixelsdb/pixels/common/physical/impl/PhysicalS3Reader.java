@@ -52,7 +52,9 @@ public class PhysicalS3Reader implements PhysicalReader
 
     static
     {
-        clientService = Executors.newFixedThreadPool(32);
+        int threadNum = Integer.parseInt(ConfigFactory.Instance().getProperty("s3.event.loop.group.threads"));
+        logger.info("Number of threads used in PhysicalS3Reader: " + threadNum);
+        clientService = Executors.newFixedThreadPool(threadNum);
         Runtime.getRuntime().addShutdownHook( new Thread(clientService::shutdownNow));
     }
 
