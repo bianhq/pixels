@@ -705,47 +705,61 @@ public class PixelsRecordReaderImpl implements PixelsRecordReader
                 int rgIdx = chunk.rowGroupId;
                 int numCols = includedColumns.length;
                 int colId = chunk.columnId;
-                /**
-                 * Issue #114:
-                 * The old code segment of chunk reading is remove in this issue.
-                 * Now, if enableMetrics == true, we can add the read performance metrics here.
-                 *
-                 * Examples of how to add performance metrics:
-                 *
-                 * BytesMsCost seekCost = new BytesMsCost();
-                 * seekCost.setBytes(seekDistanceInBytes);
-                 * seekCost.setMs(seekTimeMs);
-                 * readPerfMetrics.addSeek(seekCost);
-                 *
-                 * BytesMsCost readCost = new BytesMsCost();
-                 * readCost.setBytes(bytesRead);
-                 * readCost.setMs(readTimeMs);
-                 * readPerfMetrics.addSeqRead(readCost);
-                 */
-                actionFutures.add(requestBatch.add(queryId, chunk.offset, (int)chunk.length)
-                        .thenAccept(resp ->
+                ColumnChunkCache.CacheKey cacheKey = new ColumnChunkCache.CacheKey(physicalReader.getName(), rgIdx, colId);
+                ByteBuffer byteBuffer = ColumnChunkCache.Instance.get(cacheKey);
+                if (byteBuffer != null)
                 {
-                    if (resp != null)
-                    {
-                        chunkBuffers[rgIdx * numCols + colId] = resp;
-                    }
-                }));
+                    byteBuffer.clear();
+                    chunkBuffers[rgIdx * numCols + colId] = byteBuffer;
+                }
+                else
+                {
+                    /**
+                     * Issue #114:
+                     * The old code segment of chunk reading is remove in this issue.
+                     * Now, if enableMetrics == true, we can add the read performance metrics here.
+                     *
+                     * Examples of how to add performance metrics:
+                     *
+                     * BytesMsCost seekCost = new BytesMsCost();
+                     * seekCost.setBytes(seekDistanceInBytes);
+                     * seekCost.setMs(seekTimeMs);
+                     * readPerfMetrics.addSeek(seekCost);
+                     *
+                     * BytesMsCost readCost = new BytesMsCost();
+                     * readCost.setBytes(bytesRead);
+                     * readCost.setMs(readTimeMs);
+                     * readPerfMetrics.addSeqRead(readCost);
+                     */
+                    actionFutures.add(requestBatch.add(queryId, chunk.offset, (int) chunk.length)
+                            .thenAccept(resp ->
+                            {
+                                if (resp != null)
+                                {
+                                    chunkBuffers[rgIdx * numCols + colId] = resp;
+                                    ColumnChunkCache.Instance.put(cacheKey, resp);
+                                }
+                            }));
+                }
                 // don't update statistics in whenComplete as it may be executed in other threads.
                 diskReadBytes += chunk.length;
                 memoryUsage += chunk.length;
             }
 
-            Scheduler scheduler = SchedulerFactory.Instance().getScheduler();
-            try
+            if (!actionFutures.isEmpty())
             {
-                scheduler.executeBatch(physicalReader, requestBatch, queryId);
-                requestBatch.completeAll(actionFutures).join();
-                requestBatch.clear();
-                actionFutures.clear();
-            } catch (Exception e)
-            {
-                throw new IOException("Failed to read chunks block into buffers, " +
-                        "only the last error is thrown, check the logs for more information.", e);
+                Scheduler scheduler = SchedulerFactory.Instance().getScheduler();
+                try
+                {
+                    scheduler.executeBatch(physicalReader, requestBatch, queryId);
+                    requestBatch.completeAll(actionFutures).join();
+                    requestBatch.clear();
+                    actionFutures.clear();
+                } catch (Exception e)
+                {
+                    throw new IOException("Failed to read chunks block into buffers, " +
+                            "only the last error is thrown, check the logs for more information.", e);
+                }
             }
         }
 
