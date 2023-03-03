@@ -20,12 +20,14 @@
 package io.pixelsdb.pixels.core.reader;
 
 import com.google.protobuf.InvalidProtocolBufferException;
+import io.pixelsdb.pixels.cache.OnHeapChunkCache;
 import io.pixelsdb.pixels.cache.ColumnletId;
 import io.pixelsdb.pixels.cache.PixelsCacheReader;
 import io.pixelsdb.pixels.common.metrics.ReadPerfMetrics;
 import io.pixelsdb.pixels.common.physical.PhysicalReader;
 import io.pixelsdb.pixels.common.physical.Scheduler;
 import io.pixelsdb.pixels.common.physical.SchedulerFactory;
+import io.pixelsdb.pixels.common.utils.ConfigFactory;
 import io.pixelsdb.pixels.core.PixelsFooterCache;
 import io.pixelsdb.pixels.core.PixelsProto;
 import io.pixelsdb.pixels.core.TypeDescription;
@@ -49,6 +51,12 @@ import java.util.concurrent.CompletableFuture;
 public class PixelsRecordReaderImpl implements PixelsRecordReader
 {
     private static final Logger logger = LogManager.getLogger(PixelsRecordReaderImpl.class);
+    private static final boolean OnHeapCacheEnabled;
+
+    static
+    {
+        OnHeapCacheEnabled = Boolean.parseBoolean(ConfigFactory.Instance().getProperty("experimental.on-heap.cache.enabled"));
+    }
 
     private final PhysicalReader physicalReader;
     private final PixelsProto.PostScript postScript;
@@ -705,39 +713,51 @@ public class PixelsRecordReaderImpl implements PixelsRecordReader
                 int rgIdx = chunk.rowGroupId;
                 int numCols = includedColumns.length;
                 int colId = chunk.columnId;
-                ColumnChunkCache.CacheKey cacheKey = new ColumnChunkCache.CacheKey(physicalReader.getName(), rgIdx, colId);
-                ByteBuffer byteBuffer = ColumnChunkCache.Instance.get(cacheKey);
-                if (byteBuffer != null)
+                if (OnHeapCacheEnabled)
                 {
-                    byteBuffer.clear();
-                    chunkBuffers[rgIdx * numCols + colId] = byteBuffer;
-                }
-                else
+                    OnHeapChunkCache.ChunkKey chunkKey = new OnHeapChunkCache.ChunkKey(physicalReader.getName(), rgIdx, colId);
+                    ByteBuffer byteBuffer = OnHeapChunkCache.Instance.get(chunkKey);
+                    if (byteBuffer != null)
+                    {
+                        byteBuffer.clear();
+                        chunkBuffers[rgIdx * numCols + colId] = byteBuffer;
+                    } else
+                    {
+                        /**
+                         * Issue #114:
+                         * The old code segment of chunk reading is removed in this issue.
+                         * Now, if enableMetrics == true, we can add the read performance metrics here.
+                         *
+                         * Examples of how to add performance metrics:
+                         *
+                         * BytesMsCost seekCost = new BytesMsCost();
+                         * seekCost.setBytes(seekDistanceInBytes);
+                         * seekCost.setMs(seekTimeMs);
+                         * readPerfMetrics.addSeek(seekCost);
+                         *
+                         * BytesMsCost readCost = new BytesMsCost();
+                         * readCost.setBytes(bytesRead);
+                         * readCost.setMs(readTimeMs);
+                         * readPerfMetrics.addSeqRead(readCost);
+                         */
+                        actionFutures.add(requestBatch.add(queryId, chunk.offset, (int) chunk.length)
+                                .thenAccept(resp ->
+                                {
+                                    if (resp != null)
+                                    {
+                                        chunkBuffers[rgIdx * numCols + colId] = resp;
+                                        OnHeapChunkCache.Instance.put(chunkKey, resp);
+                                    }
+                                }));
+                    }
+                } else
                 {
-                    /**
-                     * Issue #114:
-                     * The old code segment of chunk reading is remove in this issue.
-                     * Now, if enableMetrics == true, we can add the read performance metrics here.
-                     *
-                     * Examples of how to add performance metrics:
-                     *
-                     * BytesMsCost seekCost = new BytesMsCost();
-                     * seekCost.setBytes(seekDistanceInBytes);
-                     * seekCost.setMs(seekTimeMs);
-                     * readPerfMetrics.addSeek(seekCost);
-                     *
-                     * BytesMsCost readCost = new BytesMsCost();
-                     * readCost.setBytes(bytesRead);
-                     * readCost.setMs(readTimeMs);
-                     * readPerfMetrics.addSeqRead(readCost);
-                     */
                     actionFutures.add(requestBatch.add(queryId, chunk.offset, (int) chunk.length)
                             .thenAccept(resp ->
                             {
                                 if (resp != null)
                                 {
                                     chunkBuffers[rgIdx * numCols + colId] = resp;
-                                    ColumnChunkCache.Instance.put(cacheKey, resp);
                                 }
                             }));
                 }

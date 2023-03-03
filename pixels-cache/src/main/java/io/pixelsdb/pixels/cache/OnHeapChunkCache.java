@@ -17,28 +17,28 @@
  * License along with Pixels.  If not, see
  * <https://www.gnu.org/licenses/>.
  */
-package io.pixelsdb.pixels.core.reader;
+package io.pixelsdb.pixels.cache;
 
 import java.nio.ByteBuffer;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Created at: 2/16/23
  * Author: hank
  */
-public class ColumnChunkCache
+public class OnHeapChunkCache
 {
-    public static final ColumnChunkCache Instance = new ColumnChunkCache();
+    public static final OnHeapChunkCache Instance = new OnHeapChunkCache();
 
-    public static class CacheKey implements Comparable<CacheKey>
+    public static class ChunkKey implements Comparable<ChunkKey>
     {
-        private String path;
-        private int rowGroupId;
-        private int columnId;
+        private final String path;
+        private final int rowGroupId;
+        private final int columnId;
 
-        public CacheKey(String path, int rowGroupId, int columnId)
+        public ChunkKey(String path, int rowGroupId, int columnId)
         {
             this.path = path;
             this.rowGroupId = rowGroupId;
@@ -50,8 +50,8 @@ public class ColumnChunkCache
         {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
-            CacheKey cacheKey = (CacheKey) o;
-            return path.equals(cacheKey.path) && rowGroupId == cacheKey.rowGroupId && columnId == cacheKey.columnId;
+            ChunkKey chunkKey = (ChunkKey) o;
+            return path.equals(chunkKey.path) && rowGroupId == chunkKey.rowGroupId && columnId == chunkKey.columnId;
         }
 
         @Override
@@ -61,7 +61,7 @@ public class ColumnChunkCache
         }
 
         @Override
-        public int compareTo(CacheKey o)
+        public int compareTo(ChunkKey o)
         {
             int a = path.compareTo(o.path);
             if (a != 0)
@@ -76,16 +76,17 @@ public class ColumnChunkCache
         }
     }
 
-    private Map<CacheKey, ByteBuffer> cache = new HashMap<>(1024);
-    private ColumnChunkCache() {}
+    private final Map<ChunkKey, ByteBuffer> chunkCache = new ConcurrentHashMap<>(1024);
 
-    public synchronized void put(CacheKey key, ByteBuffer buffer)
+    private OnHeapChunkCache() {}
+
+    public void put(ChunkKey key, ByteBuffer buffer)
     {
-        this.cache.put(key, buffer);
+        this.chunkCache.put(key, buffer);
     }
 
-    public synchronized ByteBuffer get(CacheKey key)
+    public ByteBuffer get(ChunkKey key)
     {
-        return this.cache.get(key);
+        return this.chunkCache.get(key);
     }
 }
