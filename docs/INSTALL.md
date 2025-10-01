@@ -45,6 +45,9 @@ sudo update-java-alternatives --set /path/to/the/required/jdk
 ```
 In this document, we are installing Pixels and Trino 466. The required JDK version is 23.0.0+.
 
+After that, set the `JAVA_HOME` environment variable to the home directory of the JDK in use.
+Some modules in Pixels use JNI to compile the C++ code, and this requires `JAVA_HOME` to find the JNI library.
+
 ## Install Maven
 
 Pixels requires Maven 3.8+ to build the source code.
@@ -136,7 +139,7 @@ mkdir var
 ```
 Put the sh scripts in `scripts/bin` and `scripts/sbin` into `PIXELS_HOME/bin` and `PIXELS_HOME/sbin`, respectively.
 Put `pixels-daemon-*-full.jar` into `PIXELS_HOME/bin`.
-Put `pixels-cli-*-full.jar` into `PIXELS_HOME/sbin`
+Put `pixels-cli-*-full.jar` into `PIXELS_HOME/sbin`.
 Put the jdbc connector of MySQL into `PIXELS_HOME/lib`.
 Put `pixels-common/src/main/resources/pixels.properties` into `PIXELS_HOME/etc`.
 Modify `pixels.properties` to ensure that the URLs, ports, paths, usernames, and passwords are valid.
@@ -175,6 +178,7 @@ Ensure that MySQL server can be accessed remotely. Sometimes the default MySQL c
 binds the server to localhost thus declines remote connections.
 
 Use `scripts/sql/metadata_schema.sql` to create tables in `pixels_metadata`.
+Also remember to put the jdbc connector of MySQL into `PIXELS_HOME/lib`.
 
 ## Install etcd
 
@@ -276,7 +280,7 @@ If pixels-cache is not enabled, directly start the daemons of Pixels using:
 ```
 The essential services of Pixels, such as the metadata server, transaction manager, cache coordinator, cache manager, and metrics server, are running in these daemons.
 
-To start Pixels in a cluster, edit `PIXELS_HOME/sbin/workers` and list all the worker nodes in this file.
+To start Pixels in a cluster, edit `PIXELS_HOME/etc/workers` and list all the worker nodes in this file.
 Each line in this file is in the following format:
 ```config
 hostname_of_the_worker pixels_home_of_the_worker
@@ -284,7 +288,7 @@ hostname_of_the_worker pixels_home_of_the_worker
 `pixels_home_of_the_worker` is optional if the worker has the same `PIXELS_HOME` as the coordinator node where you run
 `start_pixels.sh`.
 
-You can also start Pixels coordinator and workers separately using `PIXELS_HOME/start-coordinator` and `PIXELS_HOME/start-workers.sh`.
+You can also start Pixels coordinator and workers separately using `PIXELS_HOME/sbin/start-coordinator.sh` and `PIXELS_HOME/sbin/start-workers.sh`.
 
 > Note: You can also add JVM OPTS for Pixels daemons in `PIXELS_HOME/bin/coordinator-jvm.config` and `PIXELS_HOME/bin/worker-jvm.config`. 
 > This is useful for profiling and remote debugging.

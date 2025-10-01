@@ -179,7 +179,7 @@ public class TransServiceImpl extends TransServiceGrpc.TransServiceImplBase
         }
         else
         {
-            logger.error(String.format("transaction id %d does not exist in the context manager", request.getTransId()));
+            logger.error("transaction id {} does not exist in the context manager", request.getTransId());
             error = ErrorCode.TRANS_ID_NOT_EXIST;
         }
 
@@ -199,8 +199,8 @@ public class TransServiceImpl extends TransServiceGrpc.TransServiceImplBase
         int transCount = request.getTransIdsCount();
         if (transCount != request.getTimestampsCount())
         {
-            logger.error(String.format("the count of transaction ids %d does not match the count of timestamps %d",
-                    transCount, request.getTimestampsCount()));
+            logger.error("the count of transaction ids {} does not match the count of timestamps {}",
+                    transCount, request.getTimestampsCount());
             responseBuilder.setErrorCode(ErrorCode.TRANS_INVALID_ARGUMENT);
             responseObserver.onNext(responseBuilder.build());
             responseObserver.onCompleted();
@@ -224,14 +224,14 @@ public class TransServiceImpl extends TransServiceGrpc.TransServiceImplBase
                 {
                     allSuccess = false;
                     responseBuilder.setErrorCode(ErrorCode.TRANS_BATCH_PARTIAL_COMMIT_FAILED);
-                    logger.error("failed to commit transaction id " + transId);
+                    logger.error("failed to commit transaction id {}", transId);
                 }
             }
             else
             {
                 allSuccess = false;
                 responseBuilder.setErrorCode(ErrorCode.TRANS_BATCH_PARTIAL_ID_NOT_EXIST);
-                logger.error(String.format("transaction id %d does not exist in the context manager", transId));
+                logger.error("transaction id {} does not exist in the context manager", transId);
             }
             responseBuilder.addResults(commitSuccess);
         }
