@@ -90,9 +90,9 @@ public final class S3QS extends AbstractS3
         return SchemePrefix + path;
     }
 
-    public S3Queue openQueue(String queueUrl)
+    public S3Queue openQueue(String queueUrl, int partition)
     {
-        return new S3Queue(this, queueUrl);
+        return new S3Queue(this, queueUrl, partition);
     }
 
     @Override

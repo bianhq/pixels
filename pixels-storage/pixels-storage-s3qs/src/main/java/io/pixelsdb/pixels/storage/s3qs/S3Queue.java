@@ -19,6 +19,7 @@
  */
 package io.pixelsdb.pixels.storage.s3qs;
 
+import com.alibaba.fastjson.JSON;
 import io.pixelsdb.pixels.common.physical.PhysicalReader;
 import io.pixelsdb.pixels.common.physical.PhysicalReaderUtil;
 import io.pixelsdb.pixels.common.physical.PhysicalWriter;
@@ -34,6 +35,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -64,7 +66,7 @@ public class S3Queue implements Closeable
         }
     }
 
-    private final Queue<String> s3PathQueue = new ConcurrentLinkedQueue<>();
+    private final Queue<S3Segment> s3SegmentQueue = new ConcurrentLinkedQueue<>();
 
     private final String queueUrl;
 
@@ -72,14 +74,19 @@ public class S3Queue implements Closeable
 
     private final S3QS s3qs;
 
+    private final int partition;
+
+    private final AtomicInteger segmentId = new AtomicInteger(0);
+
     private final Lock lock = new ReentrantLock();
 
     private boolean closed = false;
 
-    public S3Queue(S3QS s3qs, String queueUrl)
+    public S3Queue(S3QS s3qs, String queueUrl, int partition)
     {
         this.s3qs = s3qs;
         this.queueUrl = queueUrl;
+        this.partition = partition;
         this.sqsClient = this.s3qs.getSqsClient();
     }
 
@@ -96,8 +103,8 @@ public class S3Queue implements Closeable
      */
     public PhysicalReader poll(int timeoutSec) throws IOException
     {
-        String s3Path = this.s3PathQueue.poll();
-        if (s3Path == null)
+        S3Segment s3Segment = this.s3SegmentQueue.poll();
+        if (s3Segment == null)
         {
             if (timeoutSec < 1)
             {
@@ -111,7 +118,7 @@ public class S3Queue implements Closeable
             try
             {
                 // try poll from queue again to see if another thread has received the messages from sqs
-                while ((s3Path = this.s3PathQueue.poll()) == null)
+                while ((s3Segment = this.s3SegmentQueue.poll()) == null)
                 {
                     ReceiveMessageRequest request = ReceiveMessageRequest.builder()
                             .queueUrl(queueUrl).maxNumberOfMessages(POLL_BATCH_SIZE).waitTimeSeconds(timeoutSec).build();
@@ -120,8 +127,12 @@ public class S3Queue implements Closeable
                     {
                         for (Message message : response.messages())
                         {
-                            String path = message.body();
-                            this.s3PathQueue.add(path);
+                            S3Segment segment = JSON.parseObject(message.body(), S3Segment.class);
+                            if (segment == null)
+                            {
+                                throw new IOException("received an invalid S3 segment message");
+                            }
+                            this.s3SegmentQueue.add(segment);
                         }
                     }
                     else
@@ -137,13 +148,14 @@ public class S3Queue implements Closeable
             }
         }
 
-        return PhysicalReaderUtil.newPhysicalReader(this.s3qs, s3Path);
+        return PhysicalReaderUtil.newPhysicalReader(this.s3qs, s3Segment.getPath());
     }
 
-    protected void push(String objectPath)
+    protected void push(String path, int size, boolean last)
     {
+        S3Segment segment = new S3Segment(path, size, this.segmentId.getAndIncrement(), this.partition, last);
         SendMessageRequest request = SendMessageRequest.builder()
-                .queueUrl(queueUrl).messageBody(objectPath).build();
+                .queueUrl(queueUrl).messageBody(JSON.toJSONString(segment)).build();
         sqsClient.sendMessage(request);
     }
 
@@ -151,14 +163,16 @@ public class S3Queue implements Closeable
      * Create a physical writer for an object of the given path. When the object is written
      * and the physical writer is closed successfully, the object path is sent to SQS.
      * @param objectPath the path of the object
+     * @param last whether it is the last physical writer in the partition
      * @return the physical writer of the object
      * @throws IOException if fails to create the physical writer for the path
      */
-    public PhysicalWriter offer(String objectPath) throws IOException
+    public PhysicalWriter offer(String objectPath, boolean last) throws IOException
     {
         PhysicalS3QSWriter writer = (PhysicalS3QSWriter) PhysicalWriterUtil
                 .newPhysicalWriter(this.s3qs, objectPath, false);
         writer.setQueue(this);
+        writer.setLast(last);
         return writer;
     }
 
@@ -170,7 +184,7 @@ public class S3Queue implements Closeable
     @Override
     public void close() throws IOException
     {
-        this.s3PathQueue.clear();
+        this.s3SegmentQueue.clear();
         this.closed = true;
         // do not close the s3qs storage and the sqs client as they are cached
     }

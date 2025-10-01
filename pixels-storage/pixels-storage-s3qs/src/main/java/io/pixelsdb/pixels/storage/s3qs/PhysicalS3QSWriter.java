@@ -35,7 +35,11 @@ import java.nio.ByteBuffer;
 public class PhysicalS3QSWriter implements PhysicalWriter
 {
     private final String pathStr;
-    private long position;
+    private int position = 0;
+    /**
+     * True if this is the last physical writer in a partition.
+     */
+    private boolean last = false;
     private final DataOutputStream out;
     private S3Queue queue = null;
 
@@ -49,7 +53,6 @@ public class PhysicalS3QSWriter implements PhysicalWriter
                 path = path.substring(path.indexOf("://") + 3);
             }
             this.pathStr = path;
-            this.position = 0L;
             this.out = storage.create(path, false, Constants.S3QS_BUFFER_SIZE);
         }
         else
@@ -61,6 +64,11 @@ public class PhysicalS3QSWriter implements PhysicalWriter
     protected void setQueue(S3Queue queue)
     {
         this.queue = queue;
+    }
+
+    protected void setLast(boolean last)
+    {
+        this.last = last;
     }
 
     /**
@@ -107,7 +115,7 @@ public class PhysicalS3QSWriter implements PhysicalWriter
     @Override
     public long append(byte[] buffer, int offset, int length) throws IOException
     {
-        long start = this.position;
+        int start = this.position;
         this.out.write(buffer, offset, length);
         this.position += length;
         return start;
@@ -119,7 +127,7 @@ public class PhysicalS3QSWriter implements PhysicalWriter
         this.out.close();
         if (this.queue != null && !this.queue.isClosed())
         {
-            this.queue.push(this.pathStr);
+            this.queue.push(this.pathStr, this.position, this.last);
         }
     }
 

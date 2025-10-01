@@ -19,6 +19,7 @@
  */
 package io.pixelsdb.pixels.storage.s3qs;
 
+import com.alibaba.fastjson.JSON;
 import io.pixelsdb.pixels.common.physical.PhysicalReader;
 import io.pixelsdb.pixels.common.physical.PhysicalWriter;
 import io.pixelsdb.pixels.common.physical.Storage;
@@ -42,7 +43,7 @@ public class TestS3QS
     public void startReader() throws IOException, InterruptedException
     {
         S3QS s3qs = (S3QS) StorageFactory.Instance().getStorage(Storage.Scheme.s3qs);
-        S3Queue queue = s3qs.openQueue("https://sqs.us-east-2.amazonaws.com/970089764833/pixels-shuffle");
+        S3Queue queue = s3qs.openQueue("https://sqs.us-east-2.amazonaws.com/970089764833/pixels-shuffle", 0);
         this.executor.submit(() -> {
             long startTime = System.currentTimeMillis();
             for (int i = 0; i < 2; i++)
@@ -74,13 +75,13 @@ public class TestS3QS
     public void testWriter() throws IOException, InterruptedException
     {
         S3QS s3qs = (S3QS) StorageFactory.Instance().getStorage(Storage.Scheme.s3qs);
-        S3Queue queue = s3qs.openQueue("https://sqs.us-east-2.amazonaws.com/970089764833/pixels-shuffle");
+        S3Queue queue = s3qs.openQueue("https://sqs.us-east-2.amazonaws.com/970089764833/pixels-shuffle", 0);
         this.executor.submit(() -> {
             byte[] buffer = new byte[8 * 1024 * 1024];
             long startTime = System.currentTimeMillis();
             for (int i = 0; i < 2; i++)
             {
-                try (PhysicalWriter writer = queue.offer("pixels-turbo-intermediate/shuffle/" + i))
+                try (PhysicalWriter writer = queue.offer("pixels-turbo-intermediate/shuffle/" + i, false))
                 {
                     writer.append(buffer);
                 }
@@ -101,5 +102,15 @@ public class TestS3QS
         });
         this.executor.shutdown();
         this.executor.awaitTermination(100, TimeUnit.HOURS);
+    }
+
+    @Test
+    public void test()
+    {
+        S3Segment s3Segment = new S3Segment("123", 3, 1, 1, false);
+        String json = JSON.toJSONString(s3Segment);
+        System.out.println(json);
+        S3Segment s3Segment1 = JSON.parseObject(json, S3Segment.class);
+        System.out.println(s3Segment1.getId());
     }
 }
