@@ -38,9 +38,9 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
+ * @author hank
  * @create 2022-02-20
  * @update 2023-05-02 merge transaction context management into trans service.
- * @author hank
  */
 public class TransService
 {
