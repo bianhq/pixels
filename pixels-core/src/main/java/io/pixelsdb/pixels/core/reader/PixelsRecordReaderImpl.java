@@ -1039,7 +1039,7 @@ public class PixelsRecordReaderImpl implements PixelsRecordReader
             }
             Random random = new Random(System.nanoTime());
             double rand  = random.nextDouble();
-            if (rand < 0.8)
+            if (rand < 0.6)
             {
                 read();
             }
