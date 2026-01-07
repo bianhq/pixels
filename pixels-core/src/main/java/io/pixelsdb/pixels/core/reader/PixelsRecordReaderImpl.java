@@ -1037,6 +1037,12 @@ public class PixelsRecordReaderImpl implements PixelsRecordReader
             {
                 throw new IOException("failed to read file.");
             }
+            Random random = new Random(System.nanoTime());
+            double rand  = random.nextDouble();
+            if (rand < 0.8)
+            {
+                read();
+            }
             readTimeNanos += System.nanoTime() - start;
             if (endOfFile)
             {
